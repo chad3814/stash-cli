@@ -2,19 +2,24 @@
   "name": "stash-cli",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsx scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "graphql-request": "^7.4.0",
-    "typescript": "^7.0.2"
+    "graphql-request": "^7.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
-    "tsx": "^4.23.5"
+    "esbuild": "^0.28.1",
+    "oxlint": "^1.77.0",
+    "tsx": "^4.23.5",
+    "typescript": "^7.0.2"
   }
 }

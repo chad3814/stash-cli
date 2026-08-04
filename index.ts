@@ -1,6 +1,6 @@
 import { gql, request } from 'graphql-request';
 
-const ENDPOINT = 'http://localhost:9999/graphql';
+const ENDPOINT = process.env['STASH_ENDPOINT'] ?? 'http://localhost:9999/graphql';
 
 const statusQuery = gql`
 query MyQuery {
