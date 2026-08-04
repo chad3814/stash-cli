@@ -54,7 +54,7 @@ type StatusResponse = {
     progress: number;
     status: 'RUNNING' | 'READY';
     description: string;
-    subTasks: string[];
+    subTasks: string[] | null;
     error: string | null;
     endTime: string | null;
     addTime: string;

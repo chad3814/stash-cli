@@ -171,6 +171,38 @@ for (const { label, value } of emptyQueues) {
   });
 }
 
+test('renders a job whose subTasks come back null', async () => {
+  // Job.subTasks is nullable in the schema and stash sends null for absent
+  // collections, which threw "Cannot read properties of null (reading 'map')".
+  const stub = await startStub(() => ({
+    data: {
+      jobQueue: [
+        {
+          id: '1',
+          progress: 0.25,
+          status: 'RUNNING',
+          description: 'Scanning',
+          subTasks: null,
+          error: null,
+          endTime: null,
+          addTime: '2026-08-04T11:59:00Z',
+          startTime: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ],
+    },
+  }));
+  try {
+    const result = await runCli([], stub.url);
+
+    assert.equal(result.code, 0, `null subTasks is not an error, stderr:\n${result.stderr}`);
+    assert.ok(result.stdout.includes('Scanning'), `expected the job to render:\n${result.stdout}`);
+    assert.match(result.stdout, /25\.00%/);
+    assert.doesNotMatch(result.stderr, /Cannot read properties/);
+  } finally {
+    await stub.close();
+  }
+});
+
 test('exits nonzero when a rescan mutation comes back incomplete', async () => {
   const stub = await startStub((body) => {
     if (isMutation(body)) {

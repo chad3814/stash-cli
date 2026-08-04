@@ -22,7 +22,9 @@ export type JobDisplay = {
   status: string;
   description: string;
   progress: number;
-  subTasks: string[];
+  // Job.subTasks is [String!] in the schema — nullable. stash returns null rather than
+  // [] for an absent collection, the same shape that crashed on jobQueue.
+  subTasks: string[] | null;
   startTime: string | null;
 };
 
@@ -61,6 +63,6 @@ export function renderJob(job: JobDisplay, now = Date.now()): string {
   const etaSuffix = eta === '' ? '' : ` ${eta}`;
   return `${emoji} ${job.description}
 ${getBarString(job.progress)} ${percentage.toFixed(2)}%${etaSuffix}
-${job.subTasks.map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
+${(job.subTasks ?? []).map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
 `;
 }

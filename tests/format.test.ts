@@ -105,6 +105,14 @@ test('renderJob omits the eta for a job at zero progress', () => {
   assert.doesNotMatch(rendered, / \n/, 'no line should end with a trailing space');
 });
 
+test('renderJob treats null subTasks as no subtasks', () => {
+  // Job.subTasks is [String!] in the schema, i.e. nullable, and stash returns null
+  // rather than [] for absent collections — the same shape that crashed on jobQueue.
+  const rendered = renderJob(job({ subTasks: null }), NOON + 300_000);
+  assert.equal(rendered, renderJob(job({ subTasks: [] }), NOON + 300_000));
+  assert.ok(rendered.includes('Scanning'), `expected the job to still render:\n${rendered}`);
+});
+
 test('renderJob passes through a subtask exactly at the 57 character boundary', () => {
   const exact = 'a'.repeat(57);
   const rendered = renderJob(job({ subTasks: [exact] }), NOON + 300_000);
