@@ -59,7 +59,7 @@ type StatusResponse = {
     endTime: string | null;
     addTime: string;
     startTime: string | null;
-  }[];
+  }[] | null;
 };
 
 type RescanResponse = {
@@ -70,6 +70,12 @@ type RescanResponse = {
 
 export async function getStatus(): Promise<void> {
   const response: StatusResponse = await request(ENDPOINT, statusQuery);
+  // stashdb answers with null rather than [] for an idle queue, but treat both the
+  // same way — an empty array would otherwise print nothing at all.
+  if (response.jobQueue == null || response.jobQueue.length === 0) {
+    console.log('Task Queue is empty');
+    return;
+  }
   for (const job of response.jobQueue) {
     console.log(renderJob(job));
   }

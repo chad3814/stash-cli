@@ -147,6 +147,30 @@ test('prints the job queue and exits zero', async () => {
   }
 });
 
+// stashdb answers with jobQueue: null rather than [] when nothing is queued, and
+// iterating that threw "is not iterable" and exited 1 on an idle server. An empty
+// array reports the same way rather than printing nothing at all.
+const emptyQueues: { label: string; value: null | Record<string, unknown>[] }[] = [
+  { label: 'null', value: null },
+  { label: 'an empty array', value: [] },
+];
+
+for (const { label, value } of emptyQueues) {
+  test(`reports an empty queue when the server returns ${label}`, async () => {
+    const stub = await startStub(() => ({ data: { jobQueue: value } }));
+    try {
+      const result = await runCli([], stub.url);
+
+      assert.equal(result.code, 0, `an idle queue is not an error, stderr:\n${result.stderr}`);
+      assert.match(result.stdout, /Task Queue is empty/);
+      assert.doesNotMatch(result.stdout, /[█░]/u, 'nothing should render a progress bar');
+      assert.equal(result.stderr, '', `expected no diagnostics, got:\n${result.stderr}`);
+    } finally {
+      await stub.close();
+    }
+  });
+}
+
 test('exits nonzero when a rescan mutation comes back incomplete', async () => {
   const stub = await startStub((body) => {
     if (isMutation(body)) {
