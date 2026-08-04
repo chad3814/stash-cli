@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, chmod, constants, copyFile, mkdtemp, readFile } from 'node:fs/promises';
+import { access, chmod, constants, copyFile, mkdtemp, readFile, stat } from 'node:fs/promises';
 import { isBuiltin } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -8,6 +8,12 @@ import { run } from './helpers/run.js';
 
 const root = resolve(import.meta.dirname, '..');
 const bundlePath = join(root, 'dist', 'stash.js');
+
+// Guards `mainFields: ['module', 'main']` in scripts/build.ts. Without it esbuild
+// resolves graphql's un-tree-shakable CJS entry and the bundle grows to ~730 KB.
+// The artifact is ~127 KB, so this leaves generous headroom for real growth while
+// still catching that regression, which no other test would notice.
+const MAX_BUNDLE_BYTES = 250_000;
 
 const build = await run('npm', ['run', 'build'], root);
 assert.equal(build.code, 0, `build failed:\n${build.stderr}`);
@@ -27,6 +33,15 @@ test('bundle inlines every non-builtin dependency', async () => {
   // The absence of require() calls alone would also hold for an empty or
   // truncated file, so assert a marker proving the dependency's code is present.
   assert.match(source, /GraphQLError/, 'graphql does not appear to be inlined');
+});
+
+test('bundle stays under the size ceiling', async () => {
+  const { size } = await stat(bundlePath);
+  assert.ok(
+    size < MAX_BUNDLE_BYTES,
+    `bundle grew to ${size} bytes, over the ${MAX_BUNDLE_BYTES} ceiling — ` +
+      "check that mainFields: ['module', 'main'] is still set in scripts/build.ts",
+  );
 });
 
 test('bundle runs standalone with no node_modules', async () => {
