@@ -1,10 +1,10 @@
-import { gql, request } from 'graphql-request';
+import { gql, request } from './graphql.js';
 import { renderJob } from './format.js';
 
 const ENDPOINT = process.env['STASH_ENDPOINT'] ?? 'http://localhost:9999/graphql';
 
 const statusQuery = gql`
-query MyQuery {
+query {
   jobQueue {
     id
     progress

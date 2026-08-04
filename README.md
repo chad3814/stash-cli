@@ -27,6 +27,7 @@ npm run build
 cp dist/stash.js ~/bin/stash
 ```
 
-`npm run build` produces a single executable file at `dist/stash.js` with every
-dependency inlined. Copy it anywhere on your `PATH` — it needs no `node_modules`
-beside it, but it does need Node installed to run.
+`npm run build` produces a single executable file at `dist/stash.js`, around 4.5 KB.
+The CLI has no runtime dependencies — it talks to the GraphQL API over `fetch`
+directly — so copy the file anywhere on your `PATH`. It needs no `node_modules` beside
+it, but it does need Node installed to run.

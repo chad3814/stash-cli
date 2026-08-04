@@ -1,7 +1,15 @@
 # stash-cli: Bundled Standalone Build
 
 **Date:** 2026-08-04
-**Status:** Approved
+**Status:** Implemented; partly superseded
+
+> **Superseded in part.** A later change removed `graphql-request` and its `graphql`
+> peer dependency in favour of a hand-rolled client in `src/graphql.ts`, taking
+> `dependencies` to `{}` and the artifact from 126,558 bytes to about 4,550. Everything
+> below about *why* the bundle is CJS, how the toolchain is wired, and the defect fixes
+> still holds. The parts about inlining `graphql`, the `mainFields` size rationale, and
+> the `GraphQLError` marker assertion describe a state that no longer exists — the
+> dependency table and bundle-size figures in those sections are historical.
 
 ## Goal
 

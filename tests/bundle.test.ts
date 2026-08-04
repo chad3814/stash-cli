@@ -9,11 +9,11 @@ import { run } from './helpers/run.js';
 const root = resolve(import.meta.dirname, '..');
 const bundlePath = join(root, 'dist', 'stash.js');
 
-// Guards `mainFields: ['module', 'main']` in scripts/build.ts. Without it esbuild
-// resolves graphql's un-tree-shakable CJS entry and the bundle grows to ~730 KB.
-// The artifact is ~127 KB, so this leaves generous headroom for real growth while
-// still catching that regression, which no other test would notice.
-const MAX_BUNDLE_BYTES = 250_000;
+// The CLI has no runtime dependencies, so the bundle is just its own source and the
+// artifact is ~4.5 KB. This ceiling catches a heavy dependency being added back
+// without anyone noticing the artifact ballooned — the previous graphql-request and
+// graphql pair cost 727 KB to send two hardcoded documents.
+const MAX_BUNDLE_BYTES = 15_000;
 
 const build = await run('npm', ['run', 'build'], root);
 assert.equal(build.code, 0, `build failed:\n${build.stderr}`);
@@ -30,9 +30,9 @@ test('bundle inlines every non-builtin dependency', async () => {
   const external = ids.filter((id) => id !== '' && !isBuiltin(id));
   assert.deepEqual(external, [], `bundle still requires external packages: ${external.join(', ')}`);
 
-  // The absence of require() calls alone would also hold for an empty or
-  // truncated file, so assert a marker proving the dependency's code is present.
-  assert.match(source, /GraphQLError/, 'graphql does not appear to be inlined');
+  // The absence of require() calls alone would also hold for an empty or truncated
+  // file, so assert a marker proving the program itself is present.
+  assert.match(source, /jobQueue/, 'bundle does not appear to contain the CLI source');
 });
 
 test('bundle stays under the size ceiling', async () => {

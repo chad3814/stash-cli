@@ -12,10 +12,6 @@
   },
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "graphql": "^16.14.2",
-    "graphql-request": "^7.4.0"
-  },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "esbuild": "^0.28.1",
