@@ -1,0 +1,36 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same ref makes the in-flight run irrelevant.
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # The bundle targets node22; verifying on anything else would test a
+          # different runtime than the artifact is built for.
+          node-version: 22
+          cache: npm
+
+      # `ci` rather than `install`: it installs strictly from the lockfile and
+      # fails on a lockfile that disagrees with package.json, which is how an
+      # undeclared dependency gets caught.
+      - run: npm ci
+
+      # lint (oxlint --deny-warnings) -> typecheck (tsc --noEmit) -> tests -> build.
+      - run: npm run verify
