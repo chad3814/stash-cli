@@ -56,8 +56,11 @@ export function renderJob(job: JobDisplay, now = Date.now()): string {
   const emoji = job.status === 'RUNNING' ? '🏃‍➡️' : '🧍';
   const percentage = job.progress * 100;
   const eta = formatEta(job.startTime, job.progress, now);
+  // Only pad before the eta when there is one, so a job without an estimate does
+  // not leave a trailing space on the line.
+  const etaSuffix = eta === '' ? '' : ` ${eta}`;
   return `${emoji} ${job.description}
-${getBarString(job.progress)} ${percentage.toFixed(2)}% ${eta}
+${getBarString(job.progress)} ${percentage.toFixed(2)}%${etaSuffix}
 ${job.subTasks.map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
 `;
 }

@@ -92,7 +92,6 @@ const result = await esbuild.build({
   platform: 'node',
   format: 'cjs',
   target: 'node22',
-  mainFields: ['module', 'main'],
   outfile: 'dist/stash.js',
   banner: { js: '#!/usr/bin/env node' },
 });
@@ -105,14 +104,12 @@ await chmod('dist/stash.js', 0o755);
 `bundle: true` with no `external` entries is what inlines `graphql-request`,
 `graphql`, and `@graphql-typed-document-node/core` into the output.
 
-`mainFields: ['module', 'main']` is load-bearing for size. `graphql` ships CJS at `main`
-and ESM at `module`, and esbuild's default for `platform: 'node'` prefers `main`. A CJS
-barrel cannot be tree-shaken, so the default pulls in all 41 validation rules and the
-entire execution engine even though this CLI only ever reaches `parse` and `print`.
-Preferring the ESM entry takes the artifact from 731,777 bytes to 126,558 — an 83%
-reduction with byte-identical rendered output. `minify` is deliberately not enabled: the
-top-level handler logs raw errors, and mangled frames from `graphql-request` internals
-would make real failures harder to read.
+*Historical note:* this build once also set `mainFields: ['module', 'main']`, because
+`graphql` shipped an un-tree-shakable CJS `main` entry that esbuild preferred by
+default, inlining all 41 validation rules and the whole execution engine. That took the
+artifact from 731,777 bytes to 126,558. Once both GraphQL dependencies were removed the
+option affected nothing and was deleted. `minify` was never enabled: the top-level
+handler logs raw errors, and mangled frames would make real failures harder to read.
 
 Failing on warnings is also load-bearing. `esbuild.build()` rejects only on errors, so
 without the check a warning exits 0. The CJS format choice makes exactly one class of

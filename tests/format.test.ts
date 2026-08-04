@@ -100,10 +100,9 @@ test('renderJob omits the eta for a job at zero progress', () => {
     job({ status: 'READY', description: 'Queued', progress: 0, startTime: null }),
     NOON,
   );
-  // The line ends with a trailing space when the eta is empty. Pre-existing
-  // behavior, asserted so a change to it is a deliberate decision.
-  assert.equal(rendered, `${QUEUED_EMOJI} Queued\n${UNDONE.repeat(40)} 0.00% \n\n`);
+  assert.equal(rendered, `${QUEUED_EMOJI} Queued\n${UNDONE.repeat(40)} 0.00%\n\n`);
   assert.doesNotMatch(rendered, /ETA/);
+  assert.doesNotMatch(rendered, / \n/, 'no line should end with a trailing space');
 });
 
 test('renderJob passes through a subtask exactly at the 57 character boundary', () => {

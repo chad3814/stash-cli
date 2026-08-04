@@ -16,7 +16,6 @@ const result = await esbuild.build({
   // graphql ships CJS at `main` and ESM at `module`. esbuild defaults to `main`
   // for platform: 'node', and a CJS barrel cannot be tree-shaken, so preferring
   // `module` keeps the unused validation and execution engines out of the bundle.
-  mainFields: ['module', 'main'],
   outfile,
   banner: { js: '#!/usr/bin/env node' },
   logLevel: 'warning',
