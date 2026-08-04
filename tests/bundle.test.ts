@@ -23,6 +23,10 @@ test('bundle inlines every non-builtin dependency', async () => {
   const ids = [...source.matchAll(/require\(["']([^"']+)["']\)/g)].map((match) => match[1] ?? '');
   const external = ids.filter((id) => id !== '' && !isBuiltin(id));
   assert.deepEqual(external, [], `bundle still requires external packages: ${external.join(', ')}`);
+
+  // The absence of require() calls alone would also hold for an empty or
+  // truncated file, so assert a marker proving the dependency's code is present.
+  assert.match(source, /GraphQLError/, 'graphql does not appear to be inlined');
 });
 
 test('bundle runs standalone with no node_modules', async () => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatEta, getBarString, truncate } from '../src/format.js';
+import type { JobDisplay } from '../src/format.js';
+import { formatEta, getBarString, renderJob, truncate } from '../src/format.js';
 
 const DONE = '█';
 const UNDONE = '░';
@@ -25,7 +26,7 @@ test('getBarString clamps negative fractions to empty', () => {
   assert.equal(getBarString(-1, 4), UNDONE.repeat(4));
 });
 
-test('getBarString always returns exactly width characters', () => {
+test('getBarString returns exactly width characters across representative fractions', () => {
   for (const fraction of [0, 0.13, 0.5, 0.87, 1]) {
     assert.equal([...getBarString(fraction, 40)].length, 40, `wrong width at ${fraction}`);
   }
@@ -70,4 +71,63 @@ test('formatEta zero-pads seconds below ten', () => {
 test('formatEta defaults now to the current clock', () => {
   const startedAMinuteAgo = new Date(Date.now() - 60_000).toISOString();
   assert.match(formatEta(startedAMinuteAgo, 0.5), /^ETA: \d+:\d{2}$/);
+});
+
+const RUNNING_EMOJI = '🏃‍➡️';
+const QUEUED_EMOJI = '🧍';
+
+function job(overrides: Partial<JobDisplay> = {}): JobDisplay {
+  return {
+    status: 'RUNNING',
+    description: 'Scanning',
+    progress: 0.5,
+    subTasks: [],
+    startTime: '2026-08-04T12:00:00Z',
+    ...overrides,
+  };
+}
+
+test('renderJob renders a running job with a bar, percentage and eta', () => {
+  const rendered = renderJob(job({ subTasks: ['scanning file'] }), NOON + 300_000);
+  assert.equal(
+    rendered,
+    `${RUNNING_EMOJI} Scanning\n${DONE.repeat(20)}${UNDONE.repeat(20)} 50.00% ETA: 5:00\n   scanning file\n`,
+  );
+});
+
+test('renderJob omits the eta for a job at zero progress', () => {
+  const rendered = renderJob(
+    job({ status: 'READY', description: 'Queued', progress: 0, startTime: null }),
+    NOON,
+  );
+  // The line ends with a trailing space when the eta is empty. Pre-existing
+  // behavior, asserted so a change to it is a deliberate decision.
+  assert.equal(rendered, `${QUEUED_EMOJI} Queued\n${UNDONE.repeat(40)} 0.00% \n\n`);
+  assert.doesNotMatch(rendered, /ETA/);
+});
+
+test('renderJob passes through a subtask exactly at the 57 character boundary', () => {
+  const exact = 'a'.repeat(57);
+  const rendered = renderJob(job({ subTasks: [exact] }), NOON + 300_000);
+  assert.ok(rendered.includes(`\n   ${exact}\n`), 'subtask was altered at the boundary');
+});
+
+test('renderJob truncates a subtask one character past the boundary', () => {
+  const rendered = renderJob(job({ subTasks: ['b'.repeat(58)] }), NOON + 300_000);
+  const expected = `${'b'.repeat(54)}...`;
+  assert.ok(rendered.includes(`\n   ${expected}\n`), `unexpected subtask line: ${rendered}`);
+  assert.equal(expected.length, 57);
+});
+
+test('renderJob indents every subtask by three spaces', () => {
+  const rendered = renderJob(job({ subTasks: ['one', 'two'] }), NOON + 300_000);
+  assert.ok(rendered.endsWith('\n   one\n   two\n'), `unexpected subtask block: ${rendered}`);
+});
+
+test('renderJob picks a different emoji for running and non-running jobs', () => {
+  const running = renderJob(job({ status: 'RUNNING' }), NOON + 300_000);
+  const queued = renderJob(job({ status: 'READY' }), NOON + 300_000);
+  assert.ok(running.startsWith(`${RUNNING_EMOJI} `), 'wrong emoji for RUNNING');
+  assert.ok(queued.startsWith(`${QUEUED_EMOJI} `), 'wrong emoji for READY');
+  assert.notEqual(RUNNING_EMOJI, QUEUED_EMOJI);
 });

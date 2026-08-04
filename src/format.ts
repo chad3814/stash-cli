@@ -14,6 +14,18 @@ export function truncate(str: string, width = 60): string {
   return str.substring(0, width - 3) + '...';
 }
 
+/**
+ * The subset of a job queue entry that rendering depends on. Declared
+ * structurally rather than imported so this module stays dependency-free.
+ */
+export type JobDisplay = {
+  status: string;
+  description: string;
+  progress: number;
+  subTasks: string[];
+  startTime: string | null;
+};
+
 export function formatEta(
   startTime: string | null,
   progress: number,
@@ -32,4 +44,20 @@ export function formatEta(
   const minutes = Math.floor(remainingS / 60);
   const seconds = remainingS % 60;
   return `ETA: ${minutes.toString(10)}:${seconds.toString(10).padStart(2, '0')}`;
+}
+
+/**
+ * Renders one job queue entry as the multi-line block the CLI prints.
+ *
+ * Note: when there is no ETA the progress line ends with a trailing space.
+ * That is pre-existing behavior, preserved deliberately.
+ */
+export function renderJob(job: JobDisplay, now = Date.now()): string {
+  const emoji = job.status === 'RUNNING' ? '🏃‍➡️' : '🧍';
+  const percentage = job.progress * 100;
+  const eta = formatEta(job.startTime, job.progress, now);
+  return `${emoji} ${job.description}
+${getBarString(job.progress)} ${percentage.toFixed(2)}% ${eta}
+${job.subTasks.map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
+`;
 }

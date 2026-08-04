@@ -7,7 +7,7 @@ function main(): Promise<void> {
   return getStatus();
 }
 
-main().then(() => process.exit(0)).catch((err: Error) => {
+main().then(() => process.exit(0)).catch((err: unknown) => {
   console.error(err);
   process.exit(1);
 });

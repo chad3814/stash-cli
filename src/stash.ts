@@ -1,5 +1,5 @@
 import { gql, request } from 'graphql-request';
-import { formatEta, getBarString, truncate } from './format.js';
+import { renderJob } from './format.js';
 
 const ENDPOINT = process.env['STASH_ENDPOINT'] ?? 'http://localhost:9999/graphql';
 
@@ -71,21 +71,16 @@ type RescanResponse = {
 export async function getStatus(): Promise<void> {
   const response: StatusResponse = await request(ENDPOINT, statusQuery);
   for (const job of response.jobQueue) {
-    const emoji = job.status === 'RUNNING' ? '🏃‍➡️' : '🧍';
-    const percentage = job.progress * 100;
-    const eta = formatEta(job.startTime, job.progress);
-    console.log(`${emoji} ${job.description}
-${getBarString(job.progress)} ${percentage.toFixed(2)}% ${eta}
-${job.subTasks.map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
-`);
+    console.log(renderJob(job));
   }
 }
 
 export async function rescan(): Promise<void> {
   const response: RescanResponse = await request(ENDPOINT, scanMutation);
   if (!response.metadataScan || !response.metadataIdentify || !response.metadataGenerate) {
-    console.error('Rescan failed', JSON.stringify(response, null, 2));
-    return;
+    // Throwing rather than logging: index.ts's top-level catch exits 1, so a
+    // failed rescan is distinguishable from success by `stash --rescan && next`.
+    throw new Error(`Rescan failed: ${JSON.stringify(response, null, 2)}`);
   }
   return getStatus();
 }
