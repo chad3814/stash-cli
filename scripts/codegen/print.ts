@@ -1,4 +1,6 @@
-import type { TypeRef } from './introspection.js';
+import type { IntrospectionInputValue, IntrospectionType, TypeRef } from './introspection.js';
+
+// ─── Scalar mapping ─────────────────────────────────────────────────────────
 
 export const SCALAR_MAP: Record<string, string> = {
   ID: 'string',
@@ -15,6 +17,8 @@ export const SCALAR_MAP: Record<string, string> = {
   Any: 'unknown',
   Upload: 'never',
 };
+
+// ─── Type reference printing ────────────────────────────────────────────────
 
 function expectOfType(ref: TypeRef): TypeRef {
   const inner = ref.ofType;
@@ -51,4 +55,87 @@ export function printTypeRef(ref: TypeRef): string {
     return printNonNull(expectOfType(ref));
   }
   return `${printNonNull(ref)} | null`;
+}
+
+// ─── Declaration printing ───────────────────────────────────────────────────
+
+type Documented = {
+  description?: string | null;
+  isDeprecated?: boolean;
+  deprecationReason?: string | null;
+};
+
+/** Prints a JSDoc block, or '' when there is nothing to say. */
+export function printJsDoc(subject: Documented, indent: string): string {
+  const lines: string[] = [];
+  if (subject.description !== undefined && subject.description !== null && subject.description !== '') {
+    lines.push(...subject.description.split('\n'));
+  }
+  if (subject.isDeprecated === true) {
+    if (lines.length > 0) {
+      lines.push('');
+    }
+    lines.push(`@deprecated ${subject.deprecationReason ?? ''}`.trimEnd());
+  }
+  if (lines.length === 0) {
+    return '';
+  }
+  // An unescaped */ inside a description would terminate the comment early.
+  const safe = lines.map((line) => line.replace(/\*\//g, '*\\/'));
+  if (safe.length === 1) {
+    return `${indent}/** ${safe[0] ?? ''} */\n`;
+  }
+  const body = safe.map((line) => `${indent} * ${line}`.trimEnd()).join('\n');
+  return `${indent}/**\n${body}\n${indent} */\n`;
+}
+
+function isOptionalInput(field: IntrospectionInputValue): boolean {
+  // Nullable inputs may be omitted; so may non-null inputs that carry a default.
+  const hasDefault = field.defaultValue !== undefined && field.defaultValue !== null;
+  return field.type.kind !== 'NON_NULL' || hasDefault;
+}
+
+export function printObjectType(type: IntrospectionType): string {
+  const fields = type.fields ?? [];
+  if (fields.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
+  }
+  const body = fields
+    .map((field) => `${printJsDoc(field, '  ')}  ${field.name}: ${printTypeRef(field.type)};`)
+    .join('\n');
+  return `${printJsDoc(type, '')}export type ${type.name} = {\n${body}\n};\n`;
+}
+
+export function printInputObjectType(type: IntrospectionType): string {
+  const fields = type.inputFields ?? [];
+  if (fields.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
+  }
+  const body = fields
+    .map((field) => {
+      const optional = isOptionalInput(field) ? '?' : '';
+      return `${printJsDoc(field, '  ')}  ${field.name}${optional}: ${printTypeRef(field.type)};`;
+    })
+    .join('\n');
+  return `${printJsDoc(type, '')}export type ${type.name} = {\n${body}\n};\n`;
+}
+
+export function printEnumType(type: IntrospectionType): string {
+  const values = type.enumValues ?? [];
+  // A type with no inhabitants is `never`. Emitting the empty body instead would
+  // produce `export type X =\n;` — a dangling `=` that does not compile.
+  if (values.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = never;\n`;
+  }
+  const body = values.map((value) => `${printJsDoc(value, '  ')}  | '${value.name}'`).join('\n');
+  return `${printJsDoc(type, '')}export type ${type.name} =\n${body};\n`;
+}
+
+export function printUnionType(type: IntrospectionType): string {
+  const members = (type.possibleTypes ?? []).map((member) => member.name ?? 'never');
+  // Same reasoning as the empty enum: `export type X = ;` does not compile.
+  if (members.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = never;\n`;
+  }
+  return `${printJsDoc(type, '')}export type ${type.name} = ${members.join(' | ')};\n`;
 }
