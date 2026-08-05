@@ -487,6 +487,53 @@ test('printUnionType prints its members', () => {
   };
   assert.equal(printUnionType(union), 'export type Result = Scene | Image;\n');
 });
+
+test('printObjectType carries field descriptions and deprecations into the declaration', () => {
+  // The standalone printJsDoc tests do not prove the container wires indent and
+  // placement correctly; this asserts the composed result.
+  const folder: IntrospectionType = {
+    kind: 'OBJECT',
+    name: 'Folder',
+    fields: [
+      { name: 'path', description: 'Absolute path on disk', type: nonNull(STRING) },
+      {
+        name: 'parent_folder_id',
+        isDeprecated: true,
+        deprecationReason: 'Use parent_folder instead',
+        type: named('SCALAR', 'ID'),
+      },
+    ],
+  };
+  assert.equal(
+    printObjectType(folder),
+    'export type Folder = {\n' +
+      '  /** Absolute path on disk */\n' +
+      '  path: string;\n' +
+      '  /** @deprecated Use parent_folder instead */\n' +
+      '  parent_folder_id: string | null;\n' +
+      '};\n',
+  );
+});
+
+test('printObjectType emits an empty object rather than a blank body', () => {
+  assert.equal(printObjectType({ kind: 'OBJECT', name: 'Empty', fields: [] }), 'export type Empty = {};\n');
+});
+
+test('printInputObjectType emits an empty object when inputFields is absent', () => {
+  assert.equal(
+    printInputObjectType({ kind: 'INPUT_OBJECT', name: 'EmptyInput', inputFields: null }),
+    'export type EmptyInput = {};\n',
+  );
+});
+
+test('printEnumType emits never for an enum with no values', () => {
+  // `export type X =\n;` would not compile — a type with no inhabitants is `never`.
+  assert.equal(printEnumType({ kind: 'ENUM', name: 'Empty', enumValues: [] }), 'export type Empty = never;\n');
+});
+
+test('printUnionType emits never for a union with no members', () => {
+  assert.equal(printUnionType({ kind: 'UNION', name: 'Empty', possibleTypes: [] }), 'export type Empty = never;\n');
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -537,14 +584,22 @@ function isOptionalInput(field: IntrospectionInputValue): boolean {
 }
 
 export function printObjectType(type: IntrospectionType): string {
-  const body = (type.fields ?? [])
+  const fields = type.fields ?? [];
+  if (fields.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
+  }
+  const body = fields
     .map((field) => `${printJsDoc(field, '  ')}  ${field.name}: ${printTypeRef(field.type)};`)
     .join('\n');
   return `${printJsDoc(type, '')}export type ${type.name} = {\n${body}\n};\n`;
 }
 
 export function printInputObjectType(type: IntrospectionType): string {
-  const body = (type.inputFields ?? [])
+  const fields = type.inputFields ?? [];
+  if (fields.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
+  }
+  const body = fields
     .map((field) => {
       const optional = isOptionalInput(field) ? '?' : '';
       return `${printJsDoc(field, '  ')}  ${field.name}${optional}: ${printTypeRef(field.type)};`;
@@ -554,15 +609,23 @@ export function printInputObjectType(type: IntrospectionType): string {
 }
 
 export function printEnumType(type: IntrospectionType): string {
-  const body = (type.enumValues ?? [])
-    .map((value) => `${printJsDoc(value, '  ')}  | '${value.name}'`)
-    .join('\n');
+  const values = type.enumValues ?? [];
+  // A type with no inhabitants is `never`. Emitting the empty body instead would
+  // produce `export type X =\n;` — a dangling `=` that does not compile.
+  if (values.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = never;\n`;
+  }
+  const body = values.map((value) => `${printJsDoc(value, '  ')}  | '${value.name}'`).join('\n');
   return `${printJsDoc(type, '')}export type ${type.name} =\n${body};\n`;
 }
 
 export function printUnionType(type: IntrospectionType): string {
-  const members = (type.possibleTypes ?? []).map((member) => member.name ?? 'never').join(' | ');
-  return `${printJsDoc(type, '')}export type ${type.name} = ${members};\n`;
+  const members = (type.possibleTypes ?? []).map((member) => member.name ?? 'never');
+  // Same reasoning as the empty enum: `export type X = ;` does not compile.
+  if (members.length === 0) {
+    return `${printJsDoc(type, '')}export type ${type.name} = never;\n`;
+  }
+  return `${printJsDoc(type, '')}export type ${type.name} = ${members.join(' | ')};\n`;
 }
 ```
 
@@ -712,10 +775,10 @@ test('introspectionToTypeScript output compiles', async () => {
 });
 ```
 
-If `tsc` rejects that ad-hoc single-file invocation — the installed compiler is
-TypeScript 7's native build and its CLI handling of explicit file arguments alongside
-flags may differ — write a minimal `tsconfig.json` beside the file in the temp directory
-and invoke `npx tsc --noEmit --project <dir>/tsconfig.json` instead:
+**TypeScript 7's native CLI does reject that ad-hoc single-file invocation** — an explicit
+file argument alongside flags conflicts with the ambient project `tsconfig.json` — so use
+this form: write a minimal `tsconfig.json` beside the file in the temp directory and
+invoke `npx tsc --noEmit --project <dir>/tsconfig.json`:
 
 ```json
 {
@@ -809,8 +872,11 @@ export function introspectionToTypeScript(schema: IntrospectionSchema): string {
     // Scalars become primitives via SCALAR_MAP; they get no declaration of their own.
     .filter((type) => type.kind !== 'SCALAR')
     // Codepoint order, not localeCompare, which varies by locale and would break
-    // byte-identical regeneration.
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    // byte-identical regeneration. `toSorted` rather than `sort` because oxlint's
+    // unicorn(no-array-sort) rule is a warning and `lint` runs --deny-warnings; the
+    // array is freshly built by the filters above, so not mutating in place costs
+    // nothing.
+    .toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
   const sections = [BANNER, ...declarable.map(printDeclaration)];
 
@@ -875,7 +941,27 @@ import { introspectionToTypeScript } from './codegen/print.js';
 const endpoint = process.env['STASH_ENDPOINT'] ?? 'http://localhost:9999/graphql';
 const outfile = resolve(import.meta.dirname, '..', 'src', 'generated', 'schema.d.ts');
 
-const { __schema: schema } = await request<{ __schema: IntrospectionSchema }>(endpoint, INTROSPECTION_QUERY);
+// src/graphql.ts checks the envelope but asserts the payload's shape rather than
+// validating it, and a transport failure rejects before its wrapping applies. Both
+// failures land here, so both are named here rather than surfacing as a TypeError from
+// inside the printer or an undici error with the endpoint buried in a cause chain.
+let payload: { __schema?: IntrospectionSchema | null };
+try {
+  payload = await request<{ __schema?: IntrospectionSchema | null }>(endpoint, INTROSPECTION_QUERY);
+} catch (error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error);
+  throw new Error(`introspecting ${endpoint} failed: ${detail}`, { cause: error });
+}
+
+// Destructured rather than `payload.__schema`, which trips oxlint's
+// no-underscore-dangle under --deny-warnings. Semantically identical.
+const { __schema: schema } = payload;
+if (schema === undefined || schema === null) {
+  throw new Error(
+    `the response from ${endpoint} contained no __schema — is introspection enabled on this stash server?`,
+  );
+}
+
 const source = introspectionToTypeScript(schema);
 
 await mkdir(dirname(outfile), { recursive: true });
