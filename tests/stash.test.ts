@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { run, type RunResult } from './helpers/run.js';
+import { GENERATE_INPUT, IDENTIFY_INPUT, SCAN_INPUT } from '../src/stash.js';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -69,6 +70,16 @@ function runCli(args: string[], endpoint: string): Promise<RunResult> {
 
 function isMutation(body: string): boolean {
   return body.includes('metadataScan');
+}
+
+type SentBody = {
+  query: string;
+  variables?: Record<string, unknown>;
+};
+
+/** Parses a captured request body to a declared shape rather than `any`. */
+function sentBody(raw: string | undefined): SentBody {
+  return JSON.parse(raw ?? '{}') as SentBody;
 }
 
 function findLine(stdout: string, label: string, matches: (line: string) => boolean): string {
@@ -215,10 +226,39 @@ test('exits nonzero when a rescan mutation comes back incomplete', async () => {
     const result = await runCli(['--rescan'], stub.url);
 
     assert.equal(result.code, 1, `expected exit 1, got ${String(result.code)}`);
-    assert.match(result.stderr, /Rescan failed/, `expected a diagnostic, got:\n${result.stderr}`);
+    assert.match(result.stderr, /sig failed/, `expected a diagnostic, got:\n${result.stderr}`);
     assert.match(result.stderr, /metadataScan/, 'diagnostic should carry the response payload');
     // The failure short-circuits before the follow-up status query.
     assert.equal(stub.requests.length, 1);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('sig sends its inputs as graphql variables, not inline literals', async () => {
+  const stub = await startStub((body) => {
+    if (isMutation(body)) {
+      return {
+        data: { metadataScan: 'scan-1', metadataIdentify: 'identify-1', metadataGenerate: 'generate-1' },
+      };
+    }
+    return { data: { jobQueue: jobQueue() } };
+  });
+  try {
+    const result = await runCli(['--rescan'], stub.url);
+    assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
+
+    const sent = sentBody(stub.requests[0]);
+    assert.ok(sent.variables, `the mutation should carry variables:\n${stub.requests[0] ?? ''}`);
+    // deepEqual against the constants, not a spot-check: this asserts each variable
+    // arrives unmangled, and tsc separately checks the constants' field names against
+    // the generated schema.
+    assert.deepEqual(sent.variables['scan'], SCAN_INPUT);
+    assert.deepEqual(sent.variables['identify'], IDENTIFY_INPUT);
+    assert.deepEqual(sent.variables['generate'], GENERATE_INPUT);
+    // The document declares variables and no longer embeds the input object.
+    assert.match(sent.query, /mutation\(\$scan: ScanMetadataInput!/);
+    assert.doesNotMatch(sent.query, /scanGenerateCovers/);
   } finally {
     await stub.close();
   }
