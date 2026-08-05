@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsx scripts/build.ts",
+    "codegen": "tsx scripts/codegen.ts",
+    "codegen:check": "npm run codegen && git diff --exit-code -- src/generated/schema.d.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --deny-warnings",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
