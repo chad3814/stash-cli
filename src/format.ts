@@ -1,3 +1,5 @@
+import type { Job, JobStatus } from './generated/schema.js';
+
 const DONE_CHAR = '█';
 const UNDONE_CHAR = '░';
 
@@ -15,17 +17,17 @@ export function truncate(str: string, width = 60): string {
 }
 
 /**
- * The subset of a job queue entry that rendering depends on. Declared
- * structurally rather than imported so this module stays dependency-free.
+ * The subset of a job queue entry that rendering depends on.
  */
-export type JobDisplay = {
-  status: string;
-  description: string;
-  progress: number;
-  // Job.subTasks is [String!] in the schema — nullable. stash returns null rather than
-  // [] for an absent collection, the same shape that crashed on jobQueue.
-  subTasks: string[] | null;
-  startTime: string | null;
+export type JobDisplay = Pick<Job, 'status' | 'description' | 'progress' | 'subTasks' | 'startTime'>;
+
+const STATUS_GLYPHS: Record<JobStatus, string> = {
+  RUNNING: '🏃‍➡️',
+  READY: '⏳',
+  FINISHED: '✅',
+  FAILED: '❌',
+  CANCELLED: '🚫',
+  STOPPING: '🛑',
 };
 
 export function formatEta(
@@ -55,14 +57,17 @@ export function formatEta(
  * That is pre-existing behavior, preserved deliberately.
  */
 export function renderJob(job: JobDisplay, now = Date.now()): string {
-  const emoji = job.status === 'RUNNING' ? '🏃‍➡️' : '🧍';
-  const percentage = job.progress * 100;
-  const eta = formatEta(job.startTime, job.progress, now);
+  const emoji = STATUS_GLYPHS[job.status];
+  // Job.progress is Float in the schema — nullable. Treat absent progress as zero
+  // explicitly rather than relying on null coercing to 0 in arithmetic.
+  const progress = job.progress ?? 0;
+  const percentage = progress * 100;
+  const eta = formatEta(job.startTime, progress, now);
   // Only pad before the eta when there is one, so a job without an estimate does
   // not leave a trailing space on the line.
   const etaSuffix = eta === '' ? '' : ` ${eta}`;
   return `${emoji} ${job.description}
-${getBarString(job.progress)} ${percentage.toFixed(2)}%${etaSuffix}
+${getBarString(progress)} ${percentage.toFixed(2)}%${etaSuffix}
 ${(job.subTasks ?? []).map((subTask) => `   ${truncate(subTask, 57)}`).join('\n')}
 `;
 }

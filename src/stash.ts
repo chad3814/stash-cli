@@ -1,5 +1,6 @@
 import { gql, request } from './graphql.js';
 import { renderJob } from './format.js';
+import type { Job, Mutations } from './generated/schema.js';
 
 const ENDPOINT = process.env['STASH_ENDPOINT'] ?? 'http://localhost:9999/graphql';
 
@@ -49,23 +50,16 @@ mutation {
 `;
 
 type StatusResponse = {
-  jobQueue: {
-    id: string;
-    progress: number;
-    status: 'RUNNING' | 'READY';
-    description: string;
-    subTasks: string[] | null;
-    error: string | null;
-    endTime: string | null;
-    addTime: string;
-    startTime: string | null;
-  }[] | null;
+  jobQueue: Pick<
+    Job,
+    'id' | 'progress' | 'status' | 'description' | 'subTasks' | 'error' | 'endTime' | 'addTime' | 'startTime'
+  >[] | null;
 };
 
 type RescanResponse = {
-  metadataScan: string;
-  metadataIdentify: string;
-  metadataGenerate: string;
+  metadataScan: Mutations['metadataScan']['result'];
+  metadataIdentify: Mutations['metadataIdentify']['result'];
+  metadataGenerate: Mutations['metadataGenerate']['result'];
 };
 
 export async function getStatus(): Promise<void> {

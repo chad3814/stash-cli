@@ -121,7 +121,7 @@ test('prints the job queue and exits zero', async () => {
     assert.match(stub.requests[0] ?? '', /jobQueue/);
 
     assert.match(result.stdout, /🏃/u, 'missing the running job emoji');
-    assert.match(result.stdout, /🧍/u, 'missing the queued job emoji');
+    assert.match(result.stdout, /⏳/u, 'missing the queued job emoji');
     assert.ok(result.stdout.includes('Scanning'), 'missing the running job description');
     assert.ok(result.stdout.includes('Generating'), 'missing the queued job description');
 

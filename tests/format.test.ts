@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { JobDisplay } from '../src/format.js';
 import { formatEta, getBarString, renderJob, truncate } from '../src/format.js';
+import type { JobStatus } from '../src/generated/schema.js';
 
 const DONE = '█';
 const UNDONE = '░';
@@ -74,7 +75,7 @@ test('formatEta defaults now to the current clock', () => {
 });
 
 const RUNNING_EMOJI = '🏃‍➡️';
-const QUEUED_EMOJI = '🧍';
+const QUEUED_EMOJI = '⏳';
 
 function job(overrides: Partial<JobDisplay> = {}): JobDisplay {
   return {
@@ -137,4 +138,31 @@ test('renderJob picks a different emoji for running and non-running jobs', () =>
   assert.ok(running.startsWith(`${RUNNING_EMOJI} `), 'wrong emoji for RUNNING');
   assert.ok(queued.startsWith(`${QUEUED_EMOJI} `), 'wrong emoji for READY');
   assert.notEqual(RUNNING_EMOJI, QUEUED_EMOJI);
+});
+
+test('renderJob renders a distinct glyph for every job status', () => {
+  // Typed as JobStatus, not string: `job({ status })` takes JobStatus once JobDisplay
+  // is a Pick of the generated Job, so a plain string would not compile.
+  const glyphs: [JobStatus, string][] = [
+    ['RUNNING', '🏃‍➡️'],
+    ['READY', '⏳'],
+    ['FINISHED', '✅'],
+    ['FAILED', '❌'],
+    ['CANCELLED', '🚫'],
+    ['STOPPING', '🛑'],
+  ];
+  const seen = new Set<string>();
+  for (const [status, glyph] of glyphs) {
+    const rendered = renderJob(job({ status, description: status }), NOON + 300_000);
+    assert.ok(rendered.startsWith(`${glyph} ${status}`), `${status} should render as ${glyph}:\n${rendered}`);
+    seen.add(glyph);
+  }
+  assert.equal(seen.size, glyphs.length, 'every status needs its own glyph');
+});
+
+test('renderJob treats null progress as zero', () => {
+  const rendered = renderJob(job({ progress: null, startTime: null }), NOON);
+  assert.equal(rendered, renderJob(job({ progress: 0, startTime: null }), NOON));
+  assert.match(rendered, /0\.00%/);
+  assert.doesNotMatch(rendered, /NaN/);
 });
