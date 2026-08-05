@@ -23,6 +23,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      # v1.0.1 was tagged while package.json still said 1.0.0, so it published a
+      # release whose manifest disagreed with its own version and nothing noticed.
+      # Runs before npm ci so a mismatch fails in seconds rather than after a full
+      # install and verify.
+      - name: Tag must match package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            echo "bump package.json to ${GITHUB_REF_NAME#v}, or retag" >&2
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches package.json $version"
+
       - run: npm ci
 
       # Gate the release on the same checks main gets. A tag should never
