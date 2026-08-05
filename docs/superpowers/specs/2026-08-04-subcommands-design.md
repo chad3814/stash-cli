@@ -1,7 +1,13 @@
 # stash-cli: Subcommands and Argument Parsing
 
-**Date:** 2026-08-04
+**Date:** 2026-08-04 (revised 2026-08-05)
 **Status:** Approved, not yet planned
+
+> **Revised after the schema codegen work landed.** This spec was written before
+> `src/generated/schema.d.ts` existed. The revision adds one material decision — inputs
+> move to GraphQL variables so the generated input types actually check them — and
+> corrects claims that the codegen and release work made false. Every schema fact below
+> was re-verified against the generated types and still holds.
 
 ## Goal
 
@@ -15,9 +21,23 @@ nothing in the tool documents `STASH_ENDPOINT` or the one flag it accepts.
 
 ## Schema Facts
 
-These were introspected from a live stash server rather than assumed, and they drive the
-design. **The mutation names are British where the CLI is American** — `anonymiseDatabase`
-and `optimiseDatabase` — which is easy to mistake for a typo.
+These are now available as generated types in `src/generated/schema.d.ts` rather than
+prose to be trusted — the table below is a summary, and the file is the authority. All of
+it was re-verified against the generated output. **The mutation names are British where the
+CLI is American** — `anonymiseDatabase` and `optimiseDatabase` — which is easy to mistake
+for a typo.
+
+The generated operation map states each signature exactly:
+
+```ts
+metadataScan: { args: { input: ScanMetadataInput }; result: string };
+optimiseDatabase: { args: Record<string, never>; result: string };
+backupDatabase: { args: { input: BackupDatabaseInput }; result: string | null };
+```
+
+Note `backupDatabase` and `anonymiseDatabase` are the only two whose `result` is
+`string | null` — the generated types encode the synchronous/asynchronous split described
+below, so it is checkable rather than remembered.
 
 | Mutation | Input | Returns |
 |---|---|---|
@@ -91,7 +111,8 @@ Every job command prints the queue afterwards, preserving what `--rescan` does t
 
 `node:util`'s `parseArgs`. It handles long and short flags, `--flag=value`, positionals,
 and strict rejection of unknown options, and costs nothing in the bundle — which matters
-for a project whose `dependencies` is `{}` and whose artifact is 4.6 KB.
+for a project whose `dependencies` is `{}` and whose artifact is 4,896 bytes against a
+15,000-byte ceiling enforced by `tests/bundle.test.ts`.
 
 Parsing is **two-stage**, which is what makes per-command flag validation fall out for
 free rather than needing hand-written checks:
@@ -125,11 +146,61 @@ each operation, and the module-level constant becomes a default-resolution funct
 | `index.ts` | entry point only: call the CLI, wire `process.exit` |
 | `src/cli.ts` | argument parsing, command table, dispatch, help and version text |
 | `src/stash.ts` | the GraphQL documents and one function per operation, each taking an endpoint |
-| `src/graphql.ts` | unchanged — `request<T>(endpoint, query)` already takes an endpoint |
-| `src/format.ts` | unchanged |
+| `src/graphql.ts` | gains an optional `variables` argument — see below |
+| `src/format.ts` | unchanged by this work |
+| `src/generated/schema.d.ts` | unchanged — consumed, never edited. Regenerate with `npm run codegen` |
 
 The command table is the single place a command's name, its mutation, its options, and
 its help line live together, so adding `clean` later is one entry plus one function.
+
+`src/stash.ts` already composes its response types from the generated operation map
+(`Mutations['metadataScan']['result']`), and each new command's response type is declared
+the same way rather than hand-written.
+
+### Inputs go through GraphQL variables
+
+This is the one design change the codegen work forces, and it is the reason that work was
+worth doing.
+
+Today's documents inline their input as a literal inside a template string:
+
+```ts
+const doc = gql`mutation { metadataScan(input: { scanGenerateCovers: true }) }`;
+```
+
+A misspelled field there is invisible to `tsc`, because it is text inside a string. That
+was the stated justification for a test asserting on the posted document's contents — and
+with generated input types available, it is no longer the best available guarantee.
+
+Inputs therefore move to variables:
+
+```ts
+const scanDocument = gql`
+mutation($input: ScanMetadataInput!) {
+  metadataScan(input: $input)
+}
+`;
+
+const input: ScanMetadataInput = { scanGenerateCovers: true /* a typo here fails tsc */ };
+await request<ScanResponse>(endpoint, scanDocument, { input });
+```
+
+`request<T>(endpoint, query)` gains an optional third parameter and sends
+`{ query, variables }` instead of `{ query }`. Omitting it must send a body identical to
+today's, so nothing about the existing query path changes — there is a test for that,
+because `src/graphql.ts` is the one piece of infrastructure every command depends on.
+
+The eight mutations with inputs all move. `sig` composes three in one document and declares
+three variables:
+
+```
+mutation($scan: ScanMetadataInput!, $identify: IdentifyMetadataInput!, $generate: GenerateMetadataInput!)
+```
+
+`optimiseDatabase` and `metadataExport` take no arguments and need no variables.
+
+The consequence for testing is that a wrong input field becomes a compile error rather than
+something a stub test has to notice — see Testing below.
 
 ### `--version` in a standalone bundle
 
@@ -138,13 +209,12 @@ runtime. The version is injected at build time via esbuild's `define`, from the 
 already in `package.json`. A test asserts the built bundle reports the same version the
 manifest declares, so the two cannot drift.
 
-**`package.json` and the release tag can still drift, and already have:** at the time of
-writing, `package.json` says `1.0.0` while the newest tag is `v1.0.1`, so a naive
-injection would have shipped a `v1.0.1` release whose `--version` reported `1.0.0`. A
-release asserting the wrong version is worse than one asserting none. `release.yml`
-therefore gains a check that `package.json`'s version matches the tag being built
-(`v${version}` === `$GITHUB_REF_NAME`) and fails the release when it does not, which is
-free to enforce and turns a silent lie into a red run before anything is published.
+**The tag/manifest drift this section was written to warn about has already been closed.**
+When this spec was drafted, `package.json` said `1.0.0` while the newest tag was `v1.0.1`,
+so a naive injection would have shipped a `v1.0.1` release reporting `1.0.0`. `release.yml`
+now fails a release whose tag does not match `package.json` (`f0ad668`), and the manifest
+is aligned at `1.0.2`. Build-time injection is therefore safe: the version it injects
+cannot disagree with the tag being released, because the release would not have run.
 
 ### `--download`
 
@@ -180,10 +250,16 @@ stash server during development or testing**, including from a manual check.
   unknown command exits 1; an unknown option for a command exits 1; a per-command option
   rejected on the wrong command; `--endpoint` beating `STASH_ENDPOINT`; `--help` and
   `--version` exiting 0; two positionals rejected.
-- **Operations** (`tests/stash.test.ts`): for each command, assert the document actually
-  posted contains the expected mutation and input fields, since a wrong input field is
-  invisible to a type check and would only fail against a real server. Assert job
-  commands print the queue afterwards and the two synchronous ones do not.
+- **Operations** (`tests/stash.test.ts`): for each command, assert the posted body names
+  the expected mutation and carries the expected variables. **Input field names no longer
+  need asserting** — they are declared against the generated input types, so a wrong one is
+  a compile error rather than something a test must catch. What the tests still earn is the
+  wiring: that the right command sends the right mutation, that variables arrive under the
+  right names, that job commands print the queue afterwards, and that the two synchronous
+  ones do not.
+- **`request()` compatibility** (`tests/graphql.test.ts`): calling it without variables must
+  post a body byte-identical to today's `{ "query": … }`. It is the one module every command
+  depends on, so its existing contract needs pinning before a parameter is added to it.
 - **`--download`**: the stub returns a link; assert the CLI fetches it and writes the
   file, and that a failed download exits 1.
 - **Version**: the built bundle's `--version` matches `package.json`.
