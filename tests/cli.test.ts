@@ -17,7 +17,16 @@ const tsxLoader = resolve(root, 'node_modules', 'tsx', 'dist', 'loader.mjs');
 
 type Stub = { url: string; requests: string[]; close: () => Promise<void> };
 
-async function startStub(respond: (body: string) => { data: Record<string, unknown> }): Promise<Stub> {
+/**
+ * A handler either returns a GraphQL envelope, which the stub serialises with a 200, or
+ * takes control of the status and the exact bytes. The second form exists for
+ * authentication and malformed-body tests; the first keeps every older caller unchanged.
+ */
+type StubReply = { data: Record<string, unknown> } | { status?: number; raw: string };
+
+async function startStub(
+  respond: (body: string, req: IncomingMessage) => StubReply,
+): Promise<Stub> {
   const requests: string[] = [];
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     let body = '';
@@ -27,8 +36,14 @@ async function startStub(respond: (body: string) => { data: Record<string, unkno
     });
     req.on('end', () => {
       requests.push(body);
+      const reply = respond(body, req);
+      if ('raw' in reply) {
+        res.writeHead(reply.status ?? 200, { 'content-type': 'application/json' });
+        res.end(reply.raw);
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(respond(body)));
+      res.end(JSON.stringify(reply));
     });
   });
   await new Promise<void>((ready) => {
@@ -346,5 +361,70 @@ test('a download that fails mid-transfer leaves no partial file', async () => {
     assert.doesNotMatch(result.stderr, /at Object\.|at async/, `expected a plain message, got:\n${result.stderr}`);
   } finally {
     await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('a graphql request carries the ApiKey header when STASH_API_KEY is set', async () => {
+  let sentName: string | undefined;
+  let sentValue: string | undefined;
+  const stub = await startStub((_body, req) => {
+    // req.headers lowercases every name, so it cannot distinguish ApiKey from APIKEY.
+    // rawHeaders preserves the name as sent, which is the whole point of this test.
+    const index = req.rawHeaders.findIndex((entry) => entry.toLowerCase() === 'apikey');
+    if (index >= 0) {
+      sentName = req.rawHeaders[index];
+      sentValue = req.rawHeaders[index + 1];
+    }
+    return { data: { jobQueue: [] } };
+  });
+  try {
+    const result = await runCli([], { STASH_ENDPOINT: stub.url, STASH_API_KEY: 'test-key-value' });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(sentName, 'ApiKey', 'the header name must match stash exactly, including casing');
+    assert.equal(sentValue, 'test-key-value');
+  } finally {
+    await stub.close();
+  }
+});
+
+test('no ApiKey header is sent when STASH_API_KEY is unset', async () => {
+  let present = false;
+  const stub = await startStub((_body, req) => {
+    present = req.rawHeaders.some((entry) => entry.toLowerCase() === 'apikey');
+    return { data: { jobQueue: [] } };
+  });
+  try {
+    // STASH_API_KEY: '' overrides any value in the developer's own shell, so this test
+    // asserts the anonymous path regardless of the machine it runs on.
+    const result = await runCli([], { STASH_ENDPOINT: stub.url, STASH_API_KEY: '' });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(present, false, 'an unauthenticated request must look exactly as it did before');
+  } finally {
+    await stub.close();
+  }
+});
+
+test('a 401 with no key tells the user to set STASH_API_KEY', async () => {
+  const stub = await startStub(() => ({ status: 401, raw: 'Unauthorized' }));
+  try {
+    const result = await runCli([], { STASH_ENDPOINT: stub.url, STASH_API_KEY: '' });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /requires authentication/);
+    assert.match(result.stderr, /STASH_API_KEY/);
+    assert.doesNotMatch(result.stderr, /at Object\.|at async/, `expected a plain message, got:\n${result.stderr}`);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('a 401 with a key says the key was rejected', async () => {
+  const stub = await startStub(() => ({ status: 401, raw: 'Unauthorized' }));
+  try {
+    const result = await runCli([], { STASH_ENDPOINT: stub.url, STASH_API_KEY: 'test-key-value' });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /rejected the API key/);
+    assert.doesNotMatch(result.stderr, /requires authentication/);
+  } finally {
+    await stub.close();
   }
 });

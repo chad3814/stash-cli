@@ -3,6 +3,7 @@
 // documents. Named operations are deliberately unsupported: every document here is a
 // single anonymous operation, so `operationName` is never needed.
 import { OperationalError } from './errors.js';
+import { authFailureMessage, authHeaders } from './auth.js';
 
 const ACCEPT = 'application/graphql-response+json, application/json';
 
@@ -51,6 +52,7 @@ export async function request<T>(
     headers: {
       'content-type': 'application/json',
       accept: ACCEPT,
+      ...authHeaders(),
     },
     // Omitting variables must post the exact body this client has always posted —
     // `{ query, variables: undefined }` would serialise the same, but building the
@@ -61,6 +63,13 @@ export async function request<T>(
   const text = await response.text();
 
   if (!response.ok) {
+    // Checked before the generic message because "failed with status 401" tells the user
+    // nothing they can act on. The body is deliberately not interpolated here: a 401 body
+    // is typically an HTML login page.
+    const authFailure = authFailureMessage(response.status, endpoint);
+    if (authFailure !== undefined) {
+      throw new OperationalError(authFailure);
+    }
     throw new OperationalError(`GraphQL request to ${endpoint} failed with status ${response.status}: ${text}`);
   }
 
