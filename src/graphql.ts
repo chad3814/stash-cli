@@ -2,6 +2,7 @@
 // peer dependency, which together added ~600 KB to the bundle to send two hardcoded
 // documents. Named operations are deliberately unsupported: every document here is a
 // single anonymous operation, so `operationName` is never needed.
+import { OperationalError } from './errors.js';
 
 const ACCEPT = 'application/graphql-response+json, application/json';
 
@@ -60,27 +61,27 @@ export async function request<T>(
   const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(`GraphQL request to ${endpoint} failed with status ${response.status}: ${text}`);
+    throw new OperationalError(`GraphQL request to ${endpoint} failed with status ${response.status}: ${text}`);
   }
 
   let payload: unknown;
   try {
     payload = JSON.parse(text);
   } catch {
-    throw new Error(`GraphQL response from ${endpoint} was not JSON: ${text}`);
+    throw new OperationalError(`GraphQL response from ${endpoint} was not JSON: ${text}`);
   }
 
   if (!isRecord(payload)) {
-    throw new Error(`GraphQL response from ${endpoint} was not an object: ${text}`);
+    throw new OperationalError(`GraphQL response from ${endpoint} was not an object: ${text}`);
   }
 
   if (payload['errors'] !== undefined) {
-    throw new Error(`GraphQL request failed: ${describeErrors(payload['errors'])}`);
+    throw new OperationalError(`GraphQL request failed: ${describeErrors(payload['errors'])}`);
   }
 
   const data = payload['data'];
   if (data === undefined || data === null) {
-    throw new Error(`GraphQL response from ${endpoint} contained no data field: ${text}`);
+    throw new OperationalError(`GraphQL response from ${endpoint} contained no data field: ${text}`);
   }
 
   return data as T;

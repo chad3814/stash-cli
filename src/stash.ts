@@ -8,6 +8,7 @@ import type {
   Mutations,
   ScanMetadataInput,
 } from './generated/schema.js';
+import { OperationalError } from './errors.js';
 import { gql, request } from './graphql.js';
 import { renderJob } from './format.js';
 
@@ -103,7 +104,7 @@ export async function sig(endpoint: string): Promise<void> {
   if (!response.metadataScan || !response.metadataIdentify || !response.metadataGenerate) {
     // Throwing rather than logging: index.ts's top-level catch exits 1, so a failed
     // run is distinguishable from success by `stash sig && next`.
-    throw new Error(`sig failed: ${JSON.stringify(response, null, 2)}`);
+    throw new OperationalError(`sig failed: ${JSON.stringify(response, null, 2)}`);
   }
   // Three jobs, three ids — matches the single-job message shape used by runJob below
   // so `sig`'s output reads consistently with its six siblings.
@@ -142,7 +143,7 @@ async function runJob<F extends keyof Mutations>(
   const response = await request<Record<F, Mutations[F]['result']>>(endpoint, document, variables);
   const id = response[field];
   if (id === undefined || id === null || id === '') {
-    throw new Error(`${field} returned no job id: ${JSON.stringify(response, null, 2)}`);
+    throw new OperationalError(`${field} returned no job id: ${JSON.stringify(response, null, 2)}`);
   }
   console.log(`${field} queued as job ${id}`);
   return getStatus(endpoint);

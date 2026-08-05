@@ -253,6 +253,9 @@ test('backup --download refuses to overwrite an existing file', async () => {
     const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
     assert.equal(result.code, 1);
     assert.match(result.stderr, /exists/);
+    // Refusing to overwrite is an expected outcome, not a crash. Before OperationalError
+    // existed this printed the right sentence buried in a stack dump and a [cause] block.
+    assert.doesNotMatch(result.stderr, /at Object\.|at async|\[cause\]/, `expected a plain message, got:\n${result.stderr}`);
     // The point of refusing: a second backup must not destroy the first.
     assert.equal(await readFile(join(directory, 'stash-go.sqlite'), 'utf8'), 'ORIGINAL');
   } finally {
@@ -300,6 +303,7 @@ test('backup --download exits 1 and writes nothing when the server returns no li
     const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
     assert.equal(result.code, 1);
     assert.match(result.stderr, /no download link/);
+    assert.doesNotMatch(result.stderr, /at Object\.|at async/, `expected a plain message, got:\n${result.stderr}`);
     assert.deepEqual(await readdir(directory), []);
   } finally {
     await new Promise<void>((closed) => { server.close(() => { closed(); }); });
@@ -335,6 +339,11 @@ test('a download that fails mid-transfer leaves no partial file', async () => {
     assert.equal(result.code, 1);
     // A truncated database that looks like a complete one is worse than no file.
     assert.deepEqual(await readdir(directory), []);
+    // Says what was attempted and that cleanup happened, instead of the bare
+    // `TypeError: terminated` undici throws, and keeps the underlying reason as a cause.
+    assert.match(result.stderr, /failed partway; the incomplete file was removed/);
+    assert.match(result.stderr, /^ {2}caused by: /m, `expected a cause line, got:\n${result.stderr}`);
+    assert.doesNotMatch(result.stderr, /at Object\.|at async/, `expected a plain message, got:\n${result.stderr}`);
   } finally {
     await new Promise<void>((closed) => { server.close(() => { closed(); }); });
   }

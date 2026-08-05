@@ -1,5 +1,6 @@
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util';
 import { downloadTo } from './download.js';
+import { OperationalError, UsageError } from './errors.js';
 import {
   anonymize,
   backup,
@@ -19,9 +20,6 @@ import {
 // oxlint-disable-next-line no-underscore-dangle -- name is fixed by esbuild's `define` key in scripts/build.ts.
 declare const __STASH_VERSION__: string | undefined;
 const VERSION = typeof __STASH_VERSION__ === 'string' ? __STASH_VERSION__ : 'dev';
-
-/** An argument problem rather than an operational failure. index.ts reports it without a stack. */
-export class UsageError extends Error {}
 
 const GLOBAL_OPTIONS: ParseArgsOptionsConfig = {
   endpoint: { type: 'string' },
@@ -90,7 +88,7 @@ async function reportResult(
       // The user asked for a local file; the server gave nothing to fetch. Exiting 0
       // here would be indistinguishable from success with no file and no diagnostic —
       // the same shape of bug --rescan used to have on failure.
-      throw new Error(`${operation} completed but the server returned no download link`);
+      throw new OperationalError(`${operation} completed but the server returned no download link`);
     }
     console.log(`${operation} complete; stash wrote the file server-side`);
     return;

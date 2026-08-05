@@ -3,6 +3,7 @@ import { unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { OperationalError } from './errors.js';
 
 /**
  * Fetches `link` — resolved against `endpoint`'s origin, since stash returns a
@@ -26,15 +27,15 @@ export async function downloadTo(
   const target = resolve(join(directory, name));
 
   if (!target.startsWith(resolve(directory))) {
-    throw new Error(`refusing to write outside ${directory}: ${name}`);
+    throw new OperationalError(`refusing to write outside ${directory}: ${name}`);
   }
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`downloading ${url.href} failed with status ${response.status.toString(10)}`);
+    throw new OperationalError(`downloading ${url.href} failed with status ${response.status.toString(10)}`);
   }
   if (response.body === null) {
-    throw new Error(`downloading ${url.href} returned no body`);
+    throw new OperationalError(`downloading ${url.href} returned no body`);
   }
 
   // 'wx' fails when the target exists rather than truncating it, so a second backup
@@ -52,9 +53,18 @@ export async function downloadTo(
       await unlink(target).catch(() => undefined);
     }
     if (alreadyExists) {
-      throw new Error(`${target} already exists; refusing to overwrite it`, { cause: error });
+      // No `cause` here on purpose: the EEXIST it would carry only repeats this message
+      // and the path a second time, which is noise rather than detail.
+      throw new OperationalError(`${target} already exists; refusing to overwrite it`);
     }
-    throw error;
+    // Wrap rather than rethrow. The raw failure is whatever fetch or the filesystem
+    // produced — `TypeError: terminated` for a socket that dropped mid-transfer — which
+    // says nothing about what was being attempted or that the partial file is gone.
+    // index.ts prints the cause beneath this, so the underlying detail is not lost.
+    throw new OperationalError(
+      `downloading ${url.href} failed partway; the incomplete file was removed`,
+      { cause: error },
+    );
   }
   return target;
 }
