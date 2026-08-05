@@ -428,3 +428,67 @@ test('a 401 with a key says the key was rejected', async () => {
     await stub.close();
   }
 });
+
+test('a download carries the ApiKey header', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  let downloadSawKey = false;
+  const server = createServer((req, res) => {
+    if (req.url === '/graphql') {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: { backupDatabase: '/downloadBackup/stash-go.sqlite' } }));
+      });
+      return;
+    }
+    // The download is a second request to the same origin. A server that authenticates
+    // the mutation authenticates this too, so refuse it without the header.
+    downloadSawKey = req.rawHeaders.some((entry) => entry.toLowerCase() === 'apikey');
+    if (!downloadSawKey) {
+      res.writeHead(401);
+      res.end('Unauthorized');
+      return;
+    }
+    res.writeHead(200);
+    res.end('BACKUP');
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql`, STASH_API_KEY: 'test-key-value' });
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(downloadSawKey, 'the download request must carry the key, not just the mutation');
+    assert.equal(await readFile(join(directory, 'stash-go.sqlite'), 'utf8'), 'BACKUP');
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('a download rejected for auth explains it and writes nothing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  const server = createServer((req, res) => {
+    if (req.url === '/graphql') {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: { backupDatabase: '/downloadBackup/stash-go.sqlite' } }));
+      });
+      return;
+    }
+    res.writeHead(401);
+    res.end('Unauthorized');
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql`, STASH_API_KEY: 'test-key-value' });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /rejected the API key/);
+    // No half-written file from a refused download.
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});

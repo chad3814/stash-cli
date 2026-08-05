@@ -3,6 +3,7 @@ import { unlink } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { authFailureMessage, authHeaders } from './auth.js';
 import { OperationalError } from './errors.js';
 
 /**
@@ -30,8 +31,12 @@ export async function downloadTo(
     throw new OperationalError(`refusing to write outside ${directory}: ${name}`);
   }
 
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders() });
   if (!response.ok) {
+    const authFailure = authFailureMessage(response.status, url.href);
+    if (authFailure !== undefined) {
+      throw new OperationalError(authFailure);
+    }
     throw new OperationalError(`downloading ${url.href} failed with status ${response.status.toString(10)}`);
   }
   if (response.body === null) {
