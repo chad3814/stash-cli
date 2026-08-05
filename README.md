@@ -31,6 +31,14 @@ Options:
 -V, --version      show the version
 ```
 
+`backup` and `anonymize` accept `--download`, which fetches the file stash produces into
+the current directory, named after the link stash returns. An existing file is never
+overwritten — the CLI reports the collision and exits 1 — and a transfer that fails partway
+is deleted rather than left looking like a complete database. Without `--download`, stash
+writes the file server-side and the CLI reports the link it was given.
+
+`backup` also accepts `--include-blobs`.
+
 An unrecognised command or flag exits 1 rather than being ignored, and a failed task exits
 nonzero, so `stash sig && ...` behaves as expected.
 
@@ -59,7 +67,7 @@ curl -L -o ~/bin/stash \
 chmod +x ~/bin/stash
 ```
 
-`npm run build` produces a single executable file at `dist/stash.js`, around 4.5 KB.
+`npm run build` produces a single executable file at `dist/stash.js`, around 14 KB.
 The CLI has no runtime dependencies — it talks to the GraphQL API over `fetch`
 directly — so copy the file anywhere on your `PATH`. It needs no `node_modules` beside
 it, but it does need Node installed to run.

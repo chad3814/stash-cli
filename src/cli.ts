@@ -1,4 +1,5 @@
 import { parseArgs, type ParseArgsOptionsConfig } from 'node:util';
+import { downloadTo } from './download.js';
 import {
   anonymize,
   backup,
@@ -61,29 +62,39 @@ const COMMANDS: Record<string, Command> = {
     summary: 'back up the database',
     options: { download: { type: 'boolean' }, 'include-blobs': { type: 'boolean' } },
     run: async (endpoint, values) => {
-      const link = await backup(endpoint, {
-        download: flag(values, 'download'),
-        includeBlobs: flag(values, 'include-blobs'),
-      });
-      reportLink('backup', link);
+      const download = flag(values, 'download');
+      const link = await backup(endpoint, { download, includeBlobs: flag(values, 'include-blobs') });
+      await reportResult('backup', link, endpoint, download, 'stash-backup');
     },
   },
   anonymize: {
     summary: 'write an anonymised copy of the database',
     options: { download: { type: 'boolean' } },
     run: async (endpoint, values) => {
-      const link = await anonymize(endpoint, { download: flag(values, 'download') });
-      reportLink('anonymize', link);
+      const download = flag(values, 'download');
+      const link = await anonymize(endpoint, { download });
+      await reportResult('anonymize', link, endpoint, download, 'stash-anonymised');
     },
   },
 };
 
-function reportLink(operation: string, link: string | null): void {
+async function reportResult(
+  operation: string,
+  link: string | null,
+  endpoint: string,
+  download: boolean,
+  fallbackName: string,
+): Promise<void> {
   if (link === null || link === '') {
     console.log(`${operation} complete; stash wrote the file server-side`);
     return;
   }
-  console.log(`${operation} complete: ${link}`);
+  if (!download) {
+    console.log(`${operation} complete: ${link}`);
+    return;
+  }
+  const written = await downloadTo(link, endpoint, process.cwd(), fallbackName);
+  console.log(`${operation} complete: wrote ${written}`);
 }
 
 function helpText(): string {

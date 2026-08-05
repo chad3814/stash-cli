@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { run, type RunResult } from './helpers/run.js';
 
 const root = resolve(import.meta.dirname, '..');
+// The download tests spawn the CLI with its cwd set to a scratch directory outside the
+// project tree (so the file lands next to the assertions), which means node's ESM
+// resolver — which walks up from cwd looking for node_modules — never reaches this
+// project's node_modules and a bare `--import tsx` fails with ERR_MODULE_NOT_FOUND.
+// Importing the loader by absolute path sidesteps that resolution walk entirely.
+const tsxLoader = resolve(root, 'node_modules', 'tsx', 'dist', 'loader.mjs');
 
 type Stub = { url: string; requests: string[]; close: () => Promise<void> };
 
@@ -176,5 +184,119 @@ test('--help and --version make no network request', async () => {
     assert.equal(stub.requests.length, 0, 'informational flags should not contact the server');
   } finally {
     await stub.close();
+  }
+});
+
+test('backup --download writes the file named after the link', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  const server = createServer((req, res) => {
+    if (req.url === '/graphql') {
+      let body = '';
+      req.on('data', (c: Buffer) => { body += c.toString('utf8'); });
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: { backupDatabase: '/downloadBackup/stash-go.sqlite' } }));
+      });
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/octet-stream' });
+    res.end('SQLITE-BYTES');
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  const endpoint = `http://127.0.0.1:${address.port.toString(10)}/graphql`;
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: endpoint });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(await readFile(join(directory, 'stash-go.sqlite'), 'utf8'), 'SQLITE-BYTES');
+    assert.match(result.stdout, /stash-go\.sqlite/);
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('backup --download refuses to overwrite an existing file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  await writeFile(join(directory, 'stash-go.sqlite'), 'ORIGINAL', 'utf8');
+  const server = createServer((req, res) => {
+    if (req.url === '/graphql') {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: { backupDatabase: '/downloadBackup/stash-go.sqlite' } }));
+      });
+      return;
+    }
+    res.writeHead(200);
+    res.end('REPLACEMENT');
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /exists/);
+    // The point of refusing: a second backup must not destroy the first.
+    assert.equal(await readFile(join(directory, 'stash-go.sqlite'), 'utf8'), 'ORIGINAL');
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('backup without --download reports server-side completion and writes nothing', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  const server = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: { backupDatabase: null } }));
+    });
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /server-side/);
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('a download that fails mid-transfer leaves no partial file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  const server = createServer((req, res) => {
+    if (req.url === '/graphql') {
+      req.on('data', () => {});
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: { backupDatabase: '/downloadBackup/stash-go.sqlite' } }));
+      });
+      return;
+    }
+    // Announce more bytes than are sent, then hang up: the client sees a truncated body.
+    // The destroy is deferred a tick so the client actually receives the response headers
+    // and the partial body first — destroying in the same tick as the write races the
+    // client's connection setup and can abort before fetch() even resolves, which would
+    // exit 1 without ever creating a file and so would not exercise the cleanup path
+    // this test exists to cover.
+    res.writeHead(200, { 'content-length': '999999' });
+    res.write('PARTIAL');
+    setImmediate(() => { res.destroy(); });
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
+    assert.equal(result.code, 1);
+    // A truncated database that looks like a complete one is worse than no file.
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
   }
 });
