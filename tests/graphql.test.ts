@@ -181,3 +181,34 @@ test('request throws when the response body is not json', async () => {
     await stub.close();
   }
 });
+
+test('request posts variables alongside the query when given', async () => {
+  const stub = await startStub({ body: JSON.stringify({ data: { ok: true } }) });
+  try {
+    await request(stub.url, 'mutation($input: ScanMetadataInput!) { metadataScan(input: $input) }', {
+      input: { scanGenerateCovers: true },
+    });
+
+    const sent = stub.requests[0];
+    assert.ok(sent, 'no request reached the server');
+    assert.deepEqual(JSON.parse(sent.body), {
+      query: 'mutation($input: ScanMetadataInput!) { metadataScan(input: $input) }',
+      variables: { input: { scanGenerateCovers: true } },
+    });
+  } finally {
+    await stub.close();
+  }
+});
+
+test('request sends an empty variables object when explicitly given one', async () => {
+  const stub = await startStub({ body: JSON.stringify({ data: { ok: true } }) });
+  try {
+    await request(stub.url, 'query { ok }', {});
+
+    const sent = stub.requests[0];
+    assert.ok(sent, 'no request reached the server');
+    assert.deepEqual(JSON.parse(sent.body), { query: 'query { ok }', variables: {} });
+  } finally {
+    await stub.close();
+  }
+});

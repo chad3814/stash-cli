@@ -32,20 +32,29 @@ function describeErrors(errors: unknown): string {
 }
 
 /**
- * POSTs `query` to `endpoint` and returns the response's `data` field.
+ * POSTs `query` to `endpoint` and returns the response's `data` field. `variables`
+ * is sent alongside the query only when supplied; omitting it keeps the posted body
+ * exactly as it has always been, with no `variables` key at all.
  *
  * The returned value is asserted to `T` rather than validated — the envelope is
  * checked, the payload's shape is not. Throws on a non-2xx status, a non-JSON body,
  * a GraphQL `errors` array, or a missing `data` field.
  */
-export async function request<T>(endpoint: string, query: string): Promise<T> {
+export async function request<T>(
+  endpoint: string,
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       accept: ACCEPT,
     },
-    body: JSON.stringify({ query }),
+    // Omitting variables must post the exact body this client has always posted —
+    // `{ query, variables: undefined }` would serialise the same, but building the
+    // object conditionally states the guarantee instead of relying on it.
+    body: JSON.stringify(variables === undefined ? { query } : { query, variables }),
   });
 
   const text = await response.text();
