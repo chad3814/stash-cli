@@ -1,4 +1,7 @@
 import type {
+  AnonymiseDatabaseInput,
+  BackupDatabaseInput,
+  CleanGeneratedInput,
   GenerateMetadataInput,
   IdentifyMetadataInput,
   Job,
@@ -103,4 +106,136 @@ export async function sig(endpoint: string): Promise<void> {
     throw new Error(`sig failed: ${JSON.stringify(response, null, 2)}`);
   }
   return getStatus(endpoint);
+}
+
+// This is a decision the spec left open: CleanGeneratedInput lists seven fields but
+// the spec never said which the CLI sets. Every generated category is requested, and
+// dryRun is omitted rather than set to false, because the stash web UI exposes no dry
+// run for this operation — sending the field either way would imply an opinion the
+// CLI has not been given.
+const CLEAN_GENERATED_INPUT: CleanGeneratedInput = {
+  blobFiles: true,
+  imageThumbnails: true,
+  markers: true,
+  screenshots: true,
+  sprites: true,
+  transcodes: true,
+};
+
+async function runJob(
+  endpoint: string,
+  document: string,
+  field: string,
+  variables?: Record<string, unknown>,
+): Promise<void> {
+  const response = await request<Record<string, string | null>>(endpoint, document, variables);
+  const id = response[field];
+  if (id === undefined || id === null || id === '') {
+    throw new Error(`${field} returned no job id: ${JSON.stringify(response, null, 2)}`);
+  }
+  console.log(`${field} queued as job ${id}`);
+  return getStatus(endpoint);
+}
+
+const scanDocument = gql`
+mutation($input: ScanMetadataInput!) {
+  metadataScan(input: $input)
+}
+`;
+
+export function scan(endpoint: string): Promise<void> {
+  return runJob(endpoint, scanDocument, 'metadataScan', { input: SCAN_INPUT });
+}
+
+const identifyDocument = gql`
+mutation($input: IdentifyMetadataInput!) {
+  metadataIdentify(input: $input)
+}
+`;
+
+export function identify(endpoint: string): Promise<void> {
+  return runJob(endpoint, identifyDocument, 'metadataIdentify', { input: IDENTIFY_INPUT });
+}
+
+const generateDocument = gql`
+mutation($input: GenerateMetadataInput!) {
+  metadataGenerate(input: $input)
+}
+`;
+
+export function generate(endpoint: string): Promise<void> {
+  return runJob(endpoint, generateDocument, 'metadataGenerate', { input: GENERATE_INPUT });
+}
+
+const cleanGeneratedDocument = gql`
+mutation($input: CleanGeneratedInput!) {
+  metadataCleanGenerated(input: $input)
+}
+`;
+
+export function cleanGenerated(endpoint: string): Promise<void> {
+  return runJob(endpoint, cleanGeneratedDocument, 'metadataCleanGenerated', { input: CLEAN_GENERATED_INPUT });
+}
+
+// British in the schema, American on the command line. Not a typo.
+const optimizeDbDocument = gql`
+mutation {
+  optimiseDatabase
+}
+`;
+
+export function optimizeDb(endpoint: string): Promise<void> {
+  return runJob(endpoint, optimizeDbDocument, 'optimiseDatabase');
+}
+
+const exportDocument = gql`
+mutation {
+  metadataExport
+}
+`;
+
+export function exportMetadata(endpoint: string): Promise<void> {
+  return runJob(endpoint, exportDocument, 'metadataExport');
+}
+
+// backupDatabase and anonymiseDatabase are synchronous: they do the work during the
+// request and return an optional download link. They never enter the job queue, so
+// unlike every operation above there is no follow-up status query.
+
+const backupDocument = gql`
+mutation($input: BackupDatabaseInput!) {
+  backupDatabase(input: $input)
+}
+`;
+
+export async function backup(
+  endpoint: string,
+  options: { download: boolean; includeBlobs: boolean },
+): Promise<Mutations['backupDatabase']['result']> {
+  const input: BackupDatabaseInput = { download: options.download, includeBlobs: options.includeBlobs };
+  const response = await request<{ backupDatabase: Mutations['backupDatabase']['result'] }>(
+    endpoint,
+    backupDocument,
+    { input },
+  );
+  return response.backupDatabase;
+}
+
+const anonymizeDocument = gql`
+mutation($input: AnonymiseDatabaseInput!) {
+  anonymiseDatabase(input: $input)
+}
+`;
+
+export async function anonymize(
+  endpoint: string,
+  options: { download: boolean },
+): Promise<Mutations['anonymiseDatabase']['result']> {
+  const input: AnonymiseDatabaseInput = { download: options.download };
+  const response = await request<{ anonymiseDatabase: Mutations['anonymiseDatabase']['result'] }>(
+    endpoint,
+    anonymizeDocument,
+    { input },
+  );
+  return response.anonymiseDatabase;
 }

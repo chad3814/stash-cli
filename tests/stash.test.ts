@@ -4,7 +4,19 @@ import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { run, type RunResult } from './helpers/run.js';
-import { GENERATE_INPUT, IDENTIFY_INPUT, SCAN_INPUT } from '../src/stash.js';
+import {
+  anonymize,
+  backup,
+  cleanGenerated,
+  exportMetadata,
+  generate,
+  identify,
+  optimizeDb,
+  scan,
+  GENERATE_INPUT,
+  IDENTIFY_INPUT,
+  SCAN_INPUT,
+} from '../src/stash.js';
 
 const root = resolve(import.meta.dirname, '..');
 
@@ -285,6 +297,114 @@ test('exits zero when a rescan succeeds and prints the resulting queue', async (
     assert.match(stub.requests[0] ?? '', /metadataScan/);
     assert.match(stub.requests[1] ?? '', /jobQueue/);
     assert.ok(result.stdout.includes('Scanning'), `expected the queue to print:\n${result.stdout}`);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('each job operation posts its own mutation and then the status query', async () => {
+  const operations: { name: string; run: (endpoint: string) => Promise<void>; mutation: string }[] = [
+    { name: 'scan', run: scan, mutation: 'metadataScan' },
+    { name: 'identify', run: identify, mutation: 'metadataIdentify' },
+    { name: 'generate', run: generate, mutation: 'metadataGenerate' },
+    { name: 'cleanGenerated', run: cleanGenerated, mutation: 'metadataCleanGenerated' },
+    { name: 'optimizeDb', run: optimizeDb, mutation: 'optimiseDatabase' },
+    { name: 'exportMetadata', run: exportMetadata, mutation: 'metadataExport' },
+  ];
+
+  for (const operation of operations) {
+    const stub = await startStub((body) => {
+      if (body.includes(operation.mutation)) {
+        return { data: { [operation.mutation]: 'job-1' } };
+      }
+      return { data: { jobQueue: null } };
+    });
+    try {
+      await operation.run(stub.url);
+      assert.equal(stub.requests.length, 2, `${operation.name} should post the mutation then the queue`);
+      assert.match(stub.requests[0] ?? '', new RegExp(operation.mutation), `${operation.name} posted the wrong mutation`);
+      assert.match(stub.requests[1] ?? '', /jobQueue/, `${operation.name} should print the queue afterwards`);
+    } finally {
+      await stub.close();
+    }
+  }
+});
+
+test('the argument-free operations send no variables', async () => {
+  for (const [name, operation] of [['optimizeDb', optimizeDb], ['exportMetadata', exportMetadata]] as const) {
+    const stub = await startStub((body) => {
+      if (body.includes('jobQueue')) {
+        return { data: { jobQueue: null } };
+      }
+      return { data: { optimiseDatabase: 'job-1', metadataExport: 'job-1' } };
+    });
+    try {
+      await operation(stub.url);
+      const sent = sentBody(stub.requests[0]);
+      assert.equal(sent.variables, undefined, `${name} takes no input, so it should send no variables`);
+    } finally {
+      await stub.close();
+    }
+  }
+});
+
+test('cleanGenerated asks for every generated category and never a dry run', async () => {
+  const stub = await startStub((body) =>
+    body.includes('jobQueue')
+      ? { data: { jobQueue: null } }
+      : { data: { metadataCleanGenerated: 'job-1' } },
+  );
+  try {
+    await cleanGenerated(stub.url);
+    const sent = sentBody(stub.requests[0]);
+    // deepEqual against the exact object is what proves dryRun is *absent* rather than
+    // false: any extra key fails the comparison. The stash web UI exposes no dry run for
+    // this operation, so sending the field either way would imply an opinion the CLI has
+    // not been given.
+    assert.deepEqual(sent.variables?.['input'], {
+      blobFiles: true,
+      imageThumbnails: true,
+      markers: true,
+      screenshots: true,
+      sprites: true,
+      transcodes: true,
+    });
+  } finally {
+    await stub.close();
+  }
+});
+
+test('backup returns the link the server gives and posts the download flag', async () => {
+  const stub = await startStub(() => ({ data: { backupDatabase: '/downloadBackup?key=abc' } }));
+  try {
+    const link = await backup(stub.url, { download: true, includeBlobs: false });
+    assert.equal(link, '/downloadBackup?key=abc');
+    const sent = sentBody(stub.requests[0]);
+    assert.deepEqual(sent.variables?.['input'], { download: true, includeBlobs: false });
+    // Synchronous: no follow-up status query, because it never enters the job queue.
+    assert.equal(stub.requests.length, 1);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('backup returns null when the server sends no link', async () => {
+  const stub = await startStub(() => ({ data: { backupDatabase: null } }));
+  try {
+    assert.equal(await backup(stub.url, { download: false, includeBlobs: false }), null);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('anonymize returns the link and posts only the download flag', async () => {
+  const stub = await startStub(() => ({ data: { anonymiseDatabase: '/downloadAnon?key=abc' } }));
+  try {
+    const link = await anonymize(stub.url, { download: true });
+    assert.equal(link, '/downloadAnon?key=abc');
+    const sent = sentBody(stub.requests[0]);
+    assert.deepEqual(sent.variables?.['input'], { download: true });
+    assert.equal(stub.requests.length, 1);
   } finally {
     await stub.close();
   }
