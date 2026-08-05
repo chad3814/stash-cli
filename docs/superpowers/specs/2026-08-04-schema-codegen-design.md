@@ -142,10 +142,22 @@ inputs would otherwise be transcribed by hand.
 
 ## Determinism
 
-Types are emitted sorted by name, and the banner carries **no timestamp and no version**.
-Regenerating against an unchanged schema must produce a byte-identical file, so a diff is
-always a real schema change and never noise. A test asserts this by running the printer
-twice over the same fixture and comparing.
+**Every collection the printer emits is sorted by name** — types, object fields, input
+object fields, enum values, operation-map entries, and the arguments within them — and the
+banner carries **no timestamp and no version**. Regenerating against an unchanged schema
+must produce a byte-identical file, so a diff is always a real schema change and never
+noise. A test asserts this by running the printer twice over the same fixture and
+comparing, and each collection has a test that shuffled input emits in sorted order.
+
+Sorting members, not just types, is what makes the guarantee useful rather than nominal.
+Introspection returns members in the schema's own declaration order, which is stable for a
+given schema version but reshuffles whenever the schema is reordered upstream — so an
+unsorted printer would turn a cosmetic upstream reorder into thousands of changed lines
+with no semantic content, in a file nobody would then read. Member order carries no meaning
+in TypeScript: object members and union members are unordered sets.
+
+Union members (`possibleTypes`) are the one collection left unsorted. There are two unions
+in the schema, so the churn they could cause is negligible.
 
 The banner names the file as generated and gives the command to regenerate it.
 
@@ -256,8 +268,10 @@ The generator's printer is pure, so most of this needs no server:
   all four list/nullability permutations; nested lists; enums to string-literal unions;
   input-field optionality under `exactOptionalPropertyTypes`; unions; interfaces;
   operation maps with and without arguments; a field whose type is a custom scalar.
-- **Determinism**: printing the same fixture twice is byte-identical, and output is
-  sorted by type name.
+- **Determinism**: printing the same fixture twice is byte-identical, and every emitted
+  collection is sorted by name — types, object and input fields, enum values, operation-map
+  entries, and their arguments. Each has a test feeding shuffled input and asserting sorted
+  output.
 - **Output validity**: a test writes the printer's output for a fixture to a temp file and
   runs `tsc --noEmit` over it, so the generator cannot emit TypeScript that does not
   compile. This is the test that would catch a malformed emission that unit assertions on

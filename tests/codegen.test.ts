@@ -238,11 +238,102 @@ test('printObjectType carries field descriptions and deprecations into the decla
   assert.equal(
     printObjectType(folder),
     'export type Folder = {\n' +
-      '  /** Absolute path on disk */\n' +
-      '  path: string;\n' +
       '  /** @deprecated Use parent_folder instead */\n' +
       '  parent_folder_id: string | null;\n' +
+      '  /** Absolute path on disk */\n' +
+      '  path: string;\n' +
       '};\n',
+  );
+});
+
+test('printObjectType sorts fields by name regardless of schema order', () => {
+  // Introspection returns members in the schema's declaration order. Sorting means a
+  // regeneration diff says "the schema changed", not "someone moved a field".
+  const shuffled: IntrospectionType = {
+    kind: 'OBJECT',
+    name: 'Shuffled',
+    fields: [
+      { name: 'zebra', type: nonNull(STRING) },
+      { name: 'apple', type: nonNull(STRING) },
+      { name: 'mango', type: nonNull(STRING) },
+    ],
+  };
+  assert.equal(
+    printObjectType(shuffled),
+    'export type Shuffled = {\n  apple: string;\n  mango: string;\n  zebra: string;\n};\n',
+  );
+});
+
+test('printInputObjectType sorts fields by name regardless of schema order', () => {
+  const shuffled: IntrospectionType = {
+    kind: 'INPUT_OBJECT',
+    name: 'ShuffledInput',
+    inputFields: [
+      { name: 'zebra', type: nonNull(STRING) },
+      { name: 'apple', type: nonNull(STRING) },
+    ],
+  };
+  assert.equal(
+    printInputObjectType(shuffled),
+    'export type ShuffledInput = {\n  apple: string;\n  zebra: string;\n};\n',
+  );
+});
+
+test('printEnumType sorts values by name regardless of schema order', () => {
+  assert.equal(
+    printEnumType({
+      kind: 'ENUM',
+      name: 'Shuffled',
+      enumValues: [{ name: 'ZULU' }, { name: 'ALPHA' }, { name: 'MIKE' }],
+    }),
+    "export type Shuffled =\n  | 'ALPHA'\n  | 'MIKE'\n  | 'ZULU';\n",
+  );
+});
+
+test('operation arguments are sorted by name regardless of schema order', () => {
+  const out = introspectionToTypeScript({
+    queryType: null,
+    mutationType: { name: 'Mutation' },
+    subscriptionType: null,
+    types: [
+      {
+        kind: 'OBJECT',
+        name: 'Mutation',
+        fields: [
+          {
+            name: 'doThing',
+            args: [
+              { name: 'zebra', type: nonNull(STRING) },
+              { name: 'apple', type: nonNull(STRING) },
+            ],
+            type: nonNull(named('SCALAR', 'ID')),
+          },
+        ],
+      },
+    ],
+  });
+  assert.match(out, /doThing: \{ args: \{ apple: string; zebra: string \}; result: string \};/);
+});
+
+test('operations within a map are sorted by name regardless of schema order', () => {
+  const out = introspectionToTypeScript({
+    queryType: { name: 'Query' },
+    mutationType: null,
+    subscriptionType: null,
+    types: [
+      {
+        kind: 'OBJECT',
+        name: 'Query',
+        fields: [
+          { name: 'zebra', args: [], type: nonNull(STRING) },
+          { name: 'apple', args: [], type: nonNull(STRING) },
+        ],
+      },
+    ],
+  });
+  assert.ok(
+    out.indexOf('apple: {') < out.indexOf('zebra: {'),
+    `operations should be alphabetical:\n${out}`,
   );
 });
 

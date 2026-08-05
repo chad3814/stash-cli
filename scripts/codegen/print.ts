@@ -105,8 +105,23 @@ function isOptionalInput(field: IntrospectionInputValue): boolean {
   return field.type.kind !== 'NON_NULL' || hasDefault;
 }
 
+/**
+ * Codepoint comparison — never `localeCompare`, which is locale-dependent and would make
+ * regeneration produce different output on different machines.
+ *
+ * Every collection this printer emits is sorted with this. Introspection returns members
+ * in the schema's own declaration order, which is stable for a given schema version but
+ * reshuffles whenever the schema is reordered upstream. Sorting means a regeneration diff
+ * says "the schema changed" rather than "someone moved a field", which is the difference
+ * between a reviewable diff and 4,500 lines of noise. Member order carries no meaning in
+ * TypeScript: object members and union members are unordered sets.
+ */
+function byName(a: { name: string }, b: { name: string }): number {
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+
 export function printObjectType(type: IntrospectionType): string {
-  const fields = type.fields ?? [];
+  const fields = (type.fields ?? []).toSorted(byName);
   if (fields.length === 0) {
     return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
   }
@@ -117,7 +132,7 @@ export function printObjectType(type: IntrospectionType): string {
 }
 
 export function printInputObjectType(type: IntrospectionType): string {
-  const fields = type.inputFields ?? [];
+  const fields = (type.inputFields ?? []).toSorted(byName);
   if (fields.length === 0) {
     return `${printJsDoc(type, '')}export type ${type.name} = {};\n`;
   }
@@ -131,7 +146,7 @@ export function printInputObjectType(type: IntrospectionType): string {
 }
 
 export function printEnumType(type: IntrospectionType): string {
-  const values = type.enumValues ?? [];
+  const values = (type.enumValues ?? []).toSorted(byName);
   // A type with no inhabitants is `never`. Emitting the empty body instead would
   // produce `export type X =\n;` — a dangling `=` that does not compile.
   if (values.length === 0) {
@@ -179,6 +194,7 @@ function printArgs(args: IntrospectionInputValue[]): string {
   // is a per-argument declaration for every operation. Input object fields and output
   // fields do get markers.
   const body = args
+    .toSorted(byName)
     .map((arg) => `${arg.name}${isOptionalInput(arg) ? '?' : ''}: ${printTypeRef(arg.type)}`)
     .join('; ');
   return `{ ${body} }`;
@@ -186,6 +202,7 @@ function printArgs(args: IntrospectionInputValue[]): string {
 
 function printOperationMap(mapName: string, fields: IntrospectionField[]): string {
   const body = fields
+    .toSorted(byName)
     .map(
       (field) =>
         `${printJsDoc(field, '  ')}  ${field.name}: { args: ${printArgs(field.args ?? [])}; result: ${printTypeRef(field.type)} };`,
@@ -230,7 +247,7 @@ export function introspectionToTypeScript(schema: IntrospectionSchema): string {
     .filter((type) => type.kind !== 'SCALAR')
     // Codepoint order, not localeCompare, which varies by locale and would break
     // byte-identical regeneration.
-    .toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    .toSorted(byName);
 
   // JsonValue is the printer's own name in the generated file's namespace. No stash type
   // uses it today; if one ever does, two `export type JsonValue` declarations would be
