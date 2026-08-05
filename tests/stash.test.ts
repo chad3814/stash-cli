@@ -80,8 +80,19 @@ function runCli(args: string[], endpoint: string): Promise<RunResult> {
   });
 }
 
+// Distinguishes the sig mutation from the follow-up status query by looking for the
+// generic `mutation(` document opener rather than a specific field name — the earlier
+// version keyed on `metadataScan`, which was only ever a mutation-vs-query signal by
+// coincidence (metadataScan happens to be one of sig's three composed fields). This
+// version stays correct even if sig's composed fields change.
+// Reads the parsed document rather than pattern-matching the raw body. Two traps here:
+// optimiseDatabase and metadataExport take no variables, so their documents open
+// `mutation {` and a check for `mutation(` calls them queries; and every document begins
+// with a newline, which JSON-escapes to a literal backslash-n, so `\s*` in a regex over
+// the raw body matches nothing. Neither shape reaches this helper today — which is the
+// point of fixing it before someone reuses it and gets a silent wrong answer.
 function isMutation(body: string): boolean {
-  return body.includes('metadataScan');
+  return /^\s*mutation\b/.test(sentBody(body).query);
 }
 
 type SentBody = {
@@ -226,10 +237,10 @@ test('renders a job whose subTasks come back null', async () => {
   }
 });
 
-test('exits nonzero when a rescan mutation comes back incomplete', async () => {
+test('exits nonzero when a sig mutation comes back incomplete', async () => {
   const stub = await startStub((body) => {
     if (isMutation(body)) {
-      // metadataGenerate is absent, which is how a rejected rescan presents.
+      // metadataGenerate is absent, which is how a rejected sig presents.
       return { data: { metadataScan: 'scan-1', metadataIdentify: 'identify-1' } };
     }
     return { data: { jobQueue: jobQueue() } };
@@ -276,7 +287,7 @@ test('sig sends its inputs as graphql variables, not inline literals', async () 
   }
 });
 
-test('exits zero when a rescan succeeds and prints the resulting queue', async () => {
+test('exits zero when sig succeeds and prints the resulting queue', async () => {
   const stub = await startStub((body) => {
     if (isMutation(body)) {
       return {
@@ -293,10 +304,35 @@ test('exits zero when a rescan succeeds and prints the resulting queue', async (
     const result = await runCli(['sig'], stub.url);
 
     assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
-    assert.equal(stub.requests.length, 2, 'rescan should be followed by a status query');
+    assert.equal(stub.requests.length, 2, 'sig should be followed by a status query');
     assert.match(stub.requests[0] ?? '', /metadataScan/);
     assert.match(stub.requests[1] ?? '', /jobQueue/);
     assert.ok(result.stdout.includes('Scanning'), `expected the queue to print:\n${result.stdout}`);
+  } finally {
+    await stub.close();
+  }
+});
+
+test('sig prints all three job ids before the queue', async () => {
+  const stub = await startStub((body) => {
+    if (isMutation(body)) {
+      return {
+        data: {
+          metadataScan: 'scan-1',
+          metadataIdentify: 'identify-1',
+          metadataGenerate: 'generate-1',
+        },
+      };
+    }
+    return { data: { jobQueue: jobQueue() } };
+  });
+  try {
+    const result = await runCli(['sig'], stub.url);
+
+    assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
+    assert.match(result.stdout, /metadataScan queued as job scan-1/);
+    assert.match(result.stdout, /metadataIdentify queued as job identify-1/);
+    assert.match(result.stdout, /metadataGenerate queued as job generate-1/);
   } finally {
     await stub.close();
   }

@@ -77,22 +77,15 @@ test('request posts variables alongside the query when given', async () => {
   }
 });
 
-test('request omits the variables key entirely when none are given', async () => {
-  const stub = await startStub({ body: JSON.stringify({ data: { ok: true } }) });
-  try {
-    await request(stub.url, 'query { ok }');
+```
 
-    const sent = stub.requests[0];
-    assert.ok(sent, 'no request reached the server');
-    // A `"variables": null` or `"variables": {}` would be a different body than the
-    // one every existing call site has been sending. src/graphql.ts is the module all
-    // commands depend on, so its wire format is pinned rather than assumed.
-    assert.deepEqual(Object.keys(JSON.parse(sent.body)), ['query']);
-  } finally {
-    await stub.close();
-  }
-});
+Do **not** add a test asserting the body when variables are omitted. The pre-existing
+`request sends only a query field, never an operation name` already asserts both
+`Object.keys(...) === ['query']` and a full `deepEqual` of the body, so it is a strictly
+stronger pin than any new test for that case could be — a second one could not fail
+independently, and a test that cannot fail alone is noise.
 
+```ts
 test('request sends an empty variables object when explicitly given one', async () => {
   const stub = await startStub({ body: JSON.stringify({ data: { ok: true } }) });
   try {
@@ -182,7 +175,31 @@ The rescan-failure test asserts `/Rescan failed/`. The function is now `sig`, so
     assert.match(result.stderr, /sig failed/, `expected a diagnostic, got:\n${result.stderr}`);
 ```
 
-Add a test that the mutation now travels as variables rather than inline literals:
+Add a typed parse helper near the top of the file, below the existing helpers. Every test
+that inspects a posted body uses it — Task 3 reuses it too. `JSON.parse` returns `any`, so
+without this every assertion path below it is unchecked, and a misspelled path compares
+`undefined` to `undefined` and passes:
+
+```ts
+type SentBody = {
+  query: string;
+  variables?: Record<string, unknown>;
+};
+
+/** Parses a captured request body to a declared shape rather than `any`. */
+function sentBody(raw: string | undefined): SentBody {
+  return JSON.parse(raw ?? '{}') as SentBody;
+}
+```
+
+Then add a test that the mutation travels as variables rather than inline literals. Note it
+asserts each variable with `deepEqual` against the exported input constant rather than
+poking at individual fields — `Record<string, unknown>` values cannot be dotted into, which
+is what forces the stronger assertion. Import the three constants:
+
+```ts
+import { GENERATE_INPUT, IDENTIFY_INPUT, SCAN_INPUT } from '../src/stash.js';
+```
 
 ```ts
 test('sig sends its inputs as graphql variables, not inline literals', async () => {
@@ -198,12 +215,14 @@ test('sig sends its inputs as graphql variables, not inline literals', async () 
     const result = await runCli(['--rescan'], stub.url);
     assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
 
-    const sent = JSON.parse(stub.requests[0] ?? '{}');
+    const sent = sentBody(stub.requests[0]);
     assert.ok(sent.variables, `the mutation should carry variables:\n${stub.requests[0] ?? ''}`);
-    assert.equal(sent.variables.scan.scanGenerateCovers, true);
-    assert.equal(sent.variables.generate.previews, true);
-    // sources is IdentifySourceInput[], so the typed form is an explicit array.
-    assert.ok(Array.isArray(sent.variables.identify.sources));
+    // deepEqual against the constants, not a spot-check: this asserts each variable
+    // arrives unmangled, and tsc separately checks the constants' field names against
+    // the generated schema.
+    assert.deepEqual(sent.variables['scan'], SCAN_INPUT);
+    assert.deepEqual(sent.variables['identify'], IDENTIFY_INPUT);
+    assert.deepEqual(sent.variables['generate'], GENERATE_INPUT);
     // The document declares variables and no longer embeds the input object.
     assert.match(sent.query, /mutation\(\$scan: ScanMetadataInput!/);
     assert.doesNotMatch(sent.query, /scanGenerateCovers/);
@@ -384,20 +403,13 @@ git commit -m "refactor: send sig inputs as typed graphql variables"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/stash.test.ts`. A table covers the six job operations, since asserting each separately would be six copies of one body:
+Append to `tests/stash.test.ts`. The six job operations are covered by one table-driven test rather than six copies of the same body — the table is declared inside that test, below.
 
-```ts
-const JOB_COMMANDS: { flag: string; mutation: string }[] = [
-  { flag: 'scan', mutation: 'metadataScan' },
-  { flag: 'identify', mutation: 'metadataIdentify' },
-  { flag: 'generate', mutation: 'metadataGenerate' },
-  { flag: 'clean-generated', mutation: 'metadataCleanGenerated' },
-  { flag: 'optimize-db', mutation: 'optimiseDatabase' },
-  { flag: 'export', mutation: 'metadataExport' },
-];
-```
+These tests call the operations directly rather than through the CLI, because the CLI does not exist until Task 4.
 
-These tests call the operations directly rather than through the CLI, because the CLI does not exist until Task 4. Add a static import at the top of the file:
+The `SentBody` type and the `sentBody(raw)` helper **already exist in this file** — Task 2 added them. Reuse them; do not redeclare them, and do not go back to a bare `JSON.parse`, which returns `any` and leaves every assertion path below it unchecked.
+
+Add a static import at the top of the file:
 
 ```ts
 import {
@@ -442,7 +454,9 @@ test('each job operation posts its own mutation and then the status query', asyn
 });
 
 test('the argument-free operations send no variables', async () => {
-  for (const [name, run] of [['optimizeDb', optimizeDb], ['exportMetadata', exportMetadata]] as const) {
+  // Not named `run`: this file imports `run` from ./helpers/run.js, and shadowing it
+  // trips oxlint's no-shadow under --deny-warnings.
+  for (const [name, operation] of [['optimizeDb', optimizeDb], ['exportMetadata', exportMetadata]] as const) {
     const stub = await startStub((body) => {
       if (body.includes('jobQueue')) {
         return { data: { jobQueue: null } };
@@ -450,8 +464,8 @@ test('the argument-free operations send no variables', async () => {
       return { data: { optimiseDatabase: 'job-1', metadataExport: 'job-1' } };
     });
     try {
-      await run(stub.url);
-      const sent = JSON.parse(stub.requests[0] ?? '{}');
+      await operation(stub.url);
+      const sent = sentBody(stub.requests[0]);
       assert.equal(sent.variables, undefined, `${name} takes no input, so it should send no variables`);
     } finally {
       await stub.close();
@@ -467,8 +481,12 @@ test('cleanGenerated asks for every generated category and never a dry run', asy
   );
   try {
     await cleanGenerated(stub.url);
-    const sent = JSON.parse(stub.requests[0] ?? '{}');
-    assert.deepEqual(sent.variables.input, {
+    const sent = sentBody(stub.requests[0]);
+    // deepEqual against the exact object is what proves dryRun is *absent* rather than
+    // false: any extra key fails the comparison. The stash web UI exposes no dry run for
+    // this operation, so sending the field either way would imply an opinion the CLI has
+    // not been given.
+    assert.deepEqual(sent.variables?.['input'], {
       blobFiles: true,
       imageThumbnails: true,
       markers: true,
@@ -476,9 +494,6 @@ test('cleanGenerated asks for every generated category and never a dry run', asy
       sprites: true,
       transcodes: true,
     });
-    // dryRun is absent, not false: the stash web UI does not expose it, so neither
-    // does this, and sending it explicitly would imply the CLI has an opinion.
-    assert.equal('dryRun' in sent.variables.input, false);
   } finally {
     await stub.close();
   }
@@ -489,8 +504,8 @@ test('backup returns the link the server gives and posts the download flag', asy
   try {
     const link = await backup(stub.url, { download: true, includeBlobs: false });
     assert.equal(link, '/downloadBackup?key=abc');
-    const sent = JSON.parse(stub.requests[0] ?? '{}');
-    assert.deepEqual(sent.variables.input, { download: true, includeBlobs: false });
+    const sent = sentBody(stub.requests[0]);
+    assert.deepEqual(sent.variables?.['input'], { download: true, includeBlobs: false });
     // Synchronous: no follow-up status query, because it never enters the job queue.
     assert.equal(stub.requests.length, 1);
   } finally {
@@ -512,8 +527,8 @@ test('anonymize returns the link and posts only the download flag', async () => 
   try {
     const link = await anonymize(stub.url, { download: true });
     assert.equal(link, '/downloadAnon?key=abc');
-    const sent = JSON.parse(stub.requests[0] ?? '{}');
-    assert.deepEqual(sent.variables.input, { download: true });
+    const sent = sentBody(stub.requests[0]);
+    assert.deepEqual(sent.variables?.['input'], { download: true });
     assert.equal(stub.requests.length, 1);
   } finally {
     await stub.close();

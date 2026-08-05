@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { access, chmod, constants, copyFile, mkdtemp, readFile, stat } from 'node:fs/promises';
+import { access, chmod, constants, copyFile, mkdtemp, readFile } from 'node:fs/promises';
 import { isBuiltin } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -8,12 +8,6 @@ import { run } from './helpers/run.js';
 
 const root = resolve(import.meta.dirname, '..');
 const bundlePath = join(root, 'dist', 'stash.js');
-
-// The CLI has no runtime dependencies, so the bundle is just its own source and the
-// artifact is ~4.5 KB. This ceiling catches a heavy dependency being added back
-// without anyone noticing the artifact ballooned — the previous graphql-request and
-// graphql pair cost 727 KB to send two hardcoded documents.
-const MAX_BUNDLE_BYTES = 15_000;
 
 const build = await run('npm', ['run', 'build'], root);
 assert.equal(build.code, 0, `build failed:\n${build.stderr}`);
@@ -35,12 +29,24 @@ test('bundle inlines every non-builtin dependency', async () => {
   assert.match(source, /jobQueue/, 'bundle does not appear to contain the CLI source');
 });
 
-test('bundle stays under the size ceiling', async () => {
-  const { size } = await stat(bundlePath);
-  assert.ok(
-    size < MAX_BUNDLE_BYTES,
-    `bundle grew to ${size} bytes, over the ${MAX_BUNDLE_BYTES} ceiling — ` +
-      "check that mainFields: ['module', 'main'] is still set in scripts/build.ts",
+// This replaced a 15,000-byte ceiling on the artifact. The ceiling was a proxy for
+// "no dependency crept back in" — the graphql-request and graphql pair it was written
+// after cost 727 KB to send two hardcoded documents. But a byte budget also fails when
+// the CLI legitimately grows, and by the ninth subcommand it had 306 bytes left, which
+// would have started rejecting real work for the wrong reason. So assert the property
+// directly instead of a number that correlates with it.
+test('package.json declares no runtime dependencies', async () => {
+  const manifest: unknown = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  assert.ok(typeof manifest === 'object' && manifest !== null, 'package.json is not an object');
+  const declared = 'dependencies' in manifest ? manifest.dependencies : undefined;
+  const names =
+    typeof declared === 'object' && declared !== null ? Object.keys(declared) : [];
+  assert.deepEqual(
+    names,
+    [],
+    `the bundle must stay self-contained, but package.json now declares: ${names.join(', ')}. ` +
+      'A runtime dependency would be inlined into dist/stash.js, which ships as a single ' +
+      'file with no node_modules beside it.',
   );
 });
 

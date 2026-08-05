@@ -86,6 +86,12 @@ async function reportResult(
   fallbackName: string,
 ): Promise<void> {
   if (link === null || link === '') {
+    if (download) {
+      // The user asked for a local file; the server gave nothing to fetch. Exiting 0
+      // here would be indistinguishable from success with no file and no diagnostic —
+      // the same shape of bug --rescan used to have on failure.
+      throw new Error(`${operation} completed but the server returned no download link`);
+    }
     console.log(`${operation} complete; stash wrote the file server-side`);
     return;
   }
@@ -97,10 +103,15 @@ async function reportResult(
   console.log(`${operation} complete: wrote ${written}`);
 }
 
+function optionsText(options: ParseArgsOptionsConfig): string {
+  const names = Object.keys(options);
+  return names.length === 0 ? '' : ` (${names.map((name) => `--${name}`).join(', ')})`;
+}
+
 function helpText(): string {
   const width = Math.max(...Object.keys(COMMANDS).map((name) => name.length));
   const commands = Object.entries(COMMANDS)
-    .map(([name, command]) => `  ${name.padEnd(width)}  ${command.summary}`)
+    .map(([name, command]) => `  ${name.padEnd(width)}  ${command.summary}${optionsText(command.options)}`)
     .join('\n');
   return `stash — a command-line view of a stashdb job queue
 

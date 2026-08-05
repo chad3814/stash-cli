@@ -105,6 +105,11 @@ export async function sig(endpoint: string): Promise<void> {
     // run is distinguishable from success by `stash sig && next`.
     throw new Error(`sig failed: ${JSON.stringify(response, null, 2)}`);
   }
+  // Three jobs, three ids — matches the single-job message shape used by runJob below
+  // so `sig`'s output reads consistently with its six siblings.
+  console.log(`metadataScan queued as job ${response.metadataScan}`);
+  console.log(`metadataIdentify queued as job ${response.metadataIdentify}`);
+  console.log(`metadataGenerate queued as job ${response.metadataGenerate}`);
   return getStatus(endpoint);
 }
 
@@ -122,13 +127,19 @@ const CLEAN_GENERATED_INPUT: CleanGeneratedInput = {
   transcodes: true,
 };
 
-async function runJob(
+async function runJob<F extends keyof Mutations>(
   endpoint: string,
   document: string,
-  field: string,
-  variables?: Record<string, unknown>,
+  field: F,
+  variables?: Mutations[F]['args'],
 ): Promise<void> {
-  const response = await request<Record<string, string | null>>(endpoint, document, variables);
+  // `field` is checked against the schema, so a mutation that does not exist cannot
+  // compile. `variables` is checked only as far as the schema allows: every field of
+  // every *Input type is optional, which makes them weak types, so tsc rejects a wrong
+  // input object only when it shares no field name at all with the right one. Passing
+  // IdentifyMetadataInput where ScanMetadataInput belongs still compiles, because both
+  // declare `paths`. The tests assert the wire payload for exactly this reason.
+  const response = await request<Record<F, Mutations[F]['result']>>(endpoint, document, variables);
   const id = response[field];
   if (id === undefined || id === null || id === '') {
     throw new Error(`${field} returned no job id: ${JSON.stringify(response, null, 2)}`);

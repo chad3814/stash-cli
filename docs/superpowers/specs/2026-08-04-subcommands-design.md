@@ -111,8 +111,15 @@ Every job command prints the queue afterwards, preserving what `--rescan` does t
 
 `node:util`'s `parseArgs`. It handles long and short flags, `--flag=value`, positionals,
 and strict rejection of unknown options, and costs nothing in the bundle — which matters
-for a project whose `dependencies` is `{}` and whose artifact is 4,896 bytes against a
-15,000-byte ceiling enforced by `tests/bundle.test.ts`.
+for a project whose `dependencies` is `{}`.
+
+> *Historical note:* this section originally cited a 15,000-byte ceiling on the artifact,
+> enforced by `tests/bundle.test.ts`. That ceiling was a proxy for "no runtime dependency
+> crept back in". It was removed once the nine subcommands had consumed all but 306 bytes
+> of it, because a byte budget also fails when the CLI legitimately grows, and would have
+> begun rejecting real work for the wrong reason. `tests/bundle.test.ts` now asserts the
+> property directly: the bundle `require()`s only `node:` builtins, and `package.json`
+> declares no dependencies.
 
 Parsing is **two-stage**, which is what makes per-command flag validation fall out for
 free rather than needing hand-written checks:

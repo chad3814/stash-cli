@@ -54,9 +54,16 @@ async function startStub(respond: (body: string) => { data: Record<string, unkno
   };
 }
 
+// Port 1 refuses connections deterministically, so any test that forgets to stub (or
+// override) STASH_ENDPOINT still cannot reach a real server — regardless of what the
+// developer's own environment or live tunnel happens to have set. Mirrors the same
+// guard in tests/bundle.test.ts.
+const DEAD_ENDPOINT = 'http://127.0.0.1:1/graphql';
+
 function runCli(args: string[], env: Record<string, string | undefined> = {}): Promise<RunResult> {
   return run(process.execPath, ['--import', 'tsx', 'index.ts', ...args], root, {
     ...process.env,
+    STASH_ENDPOINT: DEAD_ENDPOINT,
     ...env,
   });
 }
@@ -168,6 +175,11 @@ test('-h works and a command-level --help does too', async () => {
   const scoped = await runCli(['backup', '--help']);
   assert.equal(scoped.code, 0, scoped.stderr);
   assert.match(scoped.stdout, /backup/);
+  // Not just that "backup" appears in the command list — its own options must be
+  // documented too, so adding an option to COMMANDS can't silently drift from --help.
+  assert.match(scoped.stdout, /--download/);
+  assert.match(scoped.stdout, /--include-blobs/);
+  assert.match(scoped.stdout, /anonymize.*--download/);
 });
 
 test('--version prints a version and exits 0', async () => {
@@ -181,6 +193,9 @@ test('--help and --version make no network request', async () => {
   try {
     await runCli(['--help'], { STASH_ENDPOINT: stub.url });
     await runCli(['--version'], { STASH_ENDPOINT: stub.url });
+    // A command-level --help (e.g. `backup --help`) must short-circuit before dispatch
+    // too — this is the case that would otherwise run a real backupDatabase mutation.
+    await runCli(['backup', '--help'], { STASH_ENDPOINT: stub.url });
     assert.equal(stub.requests.length, 0, 'informational flags should not contact the server');
   } finally {
     await stub.close();
@@ -261,6 +276,30 @@ test('backup without --download reports server-side completion and writes nothin
     const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /server-side/);
+    assert.deepEqual(await readdir(directory), []);
+  } finally {
+    await new Promise<void>((closed) => { server.close(() => { closed(); }); });
+  }
+});
+
+test('backup --download exits 1 and writes nothing when the server returns no link', async () => {
+  // A user who asked for a local file must not be told "complete" and get exit 0 with
+  // no file and no diagnostic — the same shape of bug --rescan used to have on failure.
+  const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
+  const server = createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: { backupDatabase: null } }));
+    });
+  });
+  await new Promise<void>((ready) => { server.listen(0, '127.0.0.1', ready); });
+  const address = server.address();
+  if (address === null || typeof address === 'string') { throw new Error('no port'); }
+  try {
+    const result = await run(process.execPath, ['--import', tsxLoader, resolve(root, 'index.ts'), 'backup', '--download'], directory, { ...process.env, STASH_ENDPOINT: `http://127.0.0.1:${address.port.toString(10)}/graphql` });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /no download link/);
     assert.deepEqual(await readdir(directory), []);
   } finally {
     await new Promise<void>((closed) => { server.close(() => { closed(); }); });
