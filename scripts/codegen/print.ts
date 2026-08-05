@@ -1,4 +1,10 @@
-import type { IntrospectionInputValue, IntrospectionType, TypeRef } from './introspection.js';
+import type {
+  IntrospectionField,
+  IntrospectionInputValue,
+  IntrospectionSchema,
+  IntrospectionType,
+  TypeRef,
+} from './introspection.js';
 
 // ─── Scalar mapping ─────────────────────────────────────────────────────────
 
@@ -138,4 +144,84 @@ export function printUnionType(type: IntrospectionType): string {
     return `${printJsDoc(type, '')}export type ${type.name} = never;\n`;
   }
   return `${printJsDoc(type, '')}export type ${type.name} = ${members.join(' | ')};\n`;
+}
+
+// ─── Document assembly ──────────────────────────────────────────────────────
+
+const BANNER = `/**
+ * Generated from the stash GraphQL schema. Do not edit.
+ *
+ * Regenerate with: npm run codegen
+ */
+`;
+
+function printArgs(args: IntrospectionInputValue[]): string {
+  if (args.length === 0) {
+    return 'Record<string, never>';
+  }
+  const body = args
+    .map((arg) => `${arg.name}${isOptionalInput(arg) ? '?' : ''}: ${printTypeRef(arg.type)}`)
+    .join('; ');
+  return `{ ${body} }`;
+}
+
+function printOperationMap(mapName: string, fields: IntrospectionField[]): string {
+  const body = fields
+    .map(
+      (field) =>
+        `${printJsDoc(field, '  ')}  ${field.name}: { args: ${printArgs(field.args ?? [])}; result: ${printTypeRef(field.type)} };`,
+    )
+    .join('\n');
+  return `export type ${mapName} = {\n${body}\n};\n`;
+}
+
+function printDeclaration(type: IntrospectionType): string {
+  switch (type.kind) {
+    case 'OBJECT':
+    case 'INTERFACE':
+      return printObjectType(type);
+    case 'INPUT_OBJECT':
+      return printInputObjectType(type);
+    case 'ENUM':
+      return printEnumType(type);
+    case 'UNION':
+      return printUnionType(type);
+    default:
+      throw new Error(`no declaration printer for kind ${type.kind}`);
+  }
+}
+
+/** Renders a whole introspection response as the contents of schema.d.ts. */
+export function introspectionToTypeScript(schema: IntrospectionSchema): string {
+  const roots = new Map<string, string>();
+  for (const [mapName, root] of [
+    ['Queries', schema.queryType],
+    ['Mutations', schema.mutationType],
+    ['Subscriptions', schema.subscriptionType],
+  ] as const) {
+    if (root !== null) {
+      roots.set(root.name, mapName);
+    }
+  }
+
+  const declarable = schema.types
+    .filter((type) => !type.name.startsWith('__'))
+    .filter((type) => !roots.has(type.name))
+    // Scalars become primitives via SCALAR_MAP; they get no declaration of their own.
+    .filter((type) => type.kind !== 'SCALAR')
+    // Codepoint order, not localeCompare, which varies by locale and would break
+    // byte-identical regeneration.
+    .toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  const sections = [BANNER, ...declarable.map(printDeclaration)];
+
+  for (const [rootName, mapName] of roots) {
+    const root = schema.types.find((type) => type.name === rootName);
+    if (root === undefined) {
+      throw new Error(`root type ${rootName} is missing from the schema types`);
+    }
+    sections.push(printOperationMap(mapName, root.fields ?? []));
+  }
+
+  return sections.join('\n');
 }

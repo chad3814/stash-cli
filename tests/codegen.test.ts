@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import type { IntrospectionType, TypeRef } from '../scripts/codegen/introspection.js';
+import type { IntrospectionSchema, IntrospectionType, TypeRef } from '../scripts/codegen/introspection.js';
 import {
+  introspectionToTypeScript,
   printEnumType,
   printInputObjectType,
   printJsDoc,
@@ -9,6 +13,7 @@ import {
   printTypeRef,
   printUnionType,
 } from '../scripts/codegen/print.js';
+import { run } from './helpers/run.js';
 
 function named(kind: 'SCALAR' | 'OBJECT' | 'ENUM' | 'INPUT_OBJECT', name: string): TypeRef {
   return { kind, name, ofType: null };
@@ -240,4 +245,119 @@ test('printEnumType emits never for an enum with no values', () => {
 
 test('printUnionType emits never for a union with no members', () => {
   assert.equal(printUnionType({ kind: 'UNION', name: 'Empty', possibleTypes: [] }), 'export type Empty = never;\n');
+});
+
+function schemaFixture(): IntrospectionSchema {
+  return {
+    queryType: { name: 'Query' },
+    mutationType: { name: 'Mutation' },
+    subscriptionType: { name: 'Subscription' },
+    types: [
+      {
+        kind: 'OBJECT',
+        name: 'Query',
+        fields: [
+          { name: 'jobQueue', type: list(nonNull(named('OBJECT', 'Job'))) },
+          {
+            name: 'findScene',
+            args: [{ name: 'id', type: nonNull(named('SCALAR', 'ID')) }],
+            type: named('OBJECT', 'Job'),
+          },
+        ],
+      },
+      {
+        kind: 'OBJECT',
+        name: 'Mutation',
+        fields: [
+          {
+            name: 'metadataScan',
+            description: 'Start a scan. Returns the job ID',
+            args: [{ name: 'input', type: nonNull(named('INPUT_OBJECT', 'ScanMetadataInput')) }],
+            type: nonNull(named('SCALAR', 'ID')),
+          },
+          { name: 'optimiseDatabase', args: [], type: nonNull(named('SCALAR', 'ID')) },
+        ],
+      },
+      { kind: 'OBJECT', name: 'Subscription', fields: [{ name: 'jobsSubscribe', type: named('OBJECT', 'Job') }] },
+      { kind: 'OBJECT', name: 'Zebra', fields: [{ name: 'id', type: nonNull(named('SCALAR', 'ID')) }] },
+      { kind: 'OBJECT', name: 'Job', fields: [{ name: 'id', type: nonNull(named('SCALAR', 'ID')) }] },
+      { kind: 'INPUT_OBJECT', name: 'ScanMetadataInput', inputFields: [{ name: 'rescan', type: named('SCALAR', 'Boolean') }] },
+      { kind: 'SCALAR', name: 'ID' },
+      { kind: 'OBJECT', name: '__Type', fields: [{ name: 'kind', type: nonNull(named('SCALAR', 'String')) }] },
+    ],
+  };
+}
+
+test('introspectionToTypeScript emits a do-not-edit banner naming the regen command', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /Do not edit/i);
+  assert.match(out, /npm run codegen/);
+});
+
+test('introspectionToTypeScript sorts declarations by codepoint', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.ok(out.indexOf('export type Job =') < out.indexOf('export type Zebra ='), 'Job must precede Zebra');
+});
+
+test('introspectionToTypeScript omits introspection types and scalars', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.doesNotMatch(out, /__Type/, 'introspection meta-types must not be emitted');
+  assert.doesNotMatch(out, /export type ID =/, 'scalars map to primitives, they get no declaration');
+});
+
+test('introspectionToTypeScript does not emit the root types as object types', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.doesNotMatch(out, /export type Query = \{/);
+  assert.doesNotMatch(out, /export type Mutation = \{/);
+  assert.doesNotMatch(out, /export type Subscription = \{/);
+});
+
+test('introspectionToTypeScript emits operation maps for all three roots', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /export type Queries = \{/);
+  assert.match(out, /export type Mutations = \{/);
+  assert.match(out, /export type Subscriptions = \{/);
+});
+
+test('introspectionToTypeScript gives an argument-free operation an empty args type', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /optimiseDatabase: \{ args: Record<string, never>; result: string \};/);
+});
+
+test('introspectionToTypeScript types operation args and results', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /metadataScan: \{ args: \{ input: ScanMetadataInput \}; result: string \};/);
+  assert.match(out, /jobQueue: \{ args: Record<string, never>; result: Job\[\] \| null \};/);
+  assert.match(out, /findScene: \{ args: \{ id: string \}; result: Job \| null \};/);
+});
+
+test('introspectionToTypeScript carries operation descriptions into the map', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /Start a scan\. Returns the job ID/);
+});
+
+test('introspectionToTypeScript is deterministic', () => {
+  const first = introspectionToTypeScript(schemaFixture());
+  const second = introspectionToTypeScript(schemaFixture());
+  assert.equal(first, second, 'regeneration must be byte-identical or every diff is noise');
+});
+
+test('introspectionToTypeScript output compiles', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'stash-codegen-'));
+  const file = join(dir, 'schema.d.ts');
+  await writeFile(file, introspectionToTypeScript(schemaFixture()), 'utf8');
+  // TypeScript 7's native CLI rejects the ad-hoc single-file invocation (an explicit
+  // file argument alongside flags conflicts with the ambient project tsconfig.json),
+  // so a minimal project is used instead.
+  const tsconfigPath = join(dir, 'tsconfig.json');
+  await writeFile(
+    tsconfigPath,
+    JSON.stringify({
+      compilerOptions: { strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true },
+      include: ['schema.d.ts'],
+    }),
+    'utf8',
+  );
+  const result = await run('npx', ['tsc', '--noEmit', '--project', tsconfigPath], process.cwd());
+  assert.equal(result.code, 0, `generated output does not compile:\n${result.stdout}\n${result.stderr}`);
 });
