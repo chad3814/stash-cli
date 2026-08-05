@@ -69,3 +69,14 @@ test('bundle runs standalone with no node_modules', async () => {
   );
   assert.equal(result.code, 1);
 });
+
+test('the bundle reports the version from package.json', async () => {
+  const manifest: unknown = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  assert.ok(
+    typeof manifest === 'object' && manifest !== null && 'version' in manifest && typeof manifest.version === 'string',
+    'package.json has no string version',
+  );
+  const result = await run(bundlePath, ['--version'], root);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout.trim(), manifest.version);
+});

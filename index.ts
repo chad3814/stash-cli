@@ -1,14 +1,14 @@
-import { getStatus, resolveEndpoint, sig } from './src/stash.js';
+import { run, UsageError } from './src/cli.js';
 
-function main(): Promise<void> {
-  const endpoint = resolveEndpoint();
-  if (process.argv.length > 2 && process.argv[2] === '--rescan') {
-    return sig(endpoint);
-  }
-  return getStatus(endpoint);
-}
-
-main().then(() => process.exit(0)).catch((err: unknown) => {
-  console.error(err);
-  process.exit(1);
-});
+run(process.argv.slice(2))
+  .then(() => process.exit(0))
+  .catch((err: unknown) => {
+    // A usage error is the user's typo, not a crash: message and a pointer, no stack.
+    if (err instanceof UsageError) {
+      console.error(err.message);
+      console.error("Run 'stash --help' for usage.");
+      process.exit(1);
+    }
+    console.error(err);
+    process.exit(1);
+  });

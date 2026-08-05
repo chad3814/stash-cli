@@ -7,16 +7,39 @@ with a progress bar, a percentage, an ETA, and its current subtasks.
 ## Usage
 
 ```sh
-stash            # print the job queue
-stash --rescan   # trigger a scan, identify, and generate pass, then print the queue
+stash              # print the job queue
+stash <command>    # run a maintenance task, then print the queue
 ```
 
-A failed rescan exits nonzero, so `stash --rescan && ...` behaves as expected.
+| Command | What it does |
+|---|---|
+| `sig` | scan, identify and generate in one pass — replaces the old `--rescan` |
+| `scan` | scan for new and changed files |
+| `identify` | identify scenes using scrapers |
+| `generate` | generate covers, previews, sprites and phashes |
+| `clean-generated` | delete generated files with no matching scene |
+| `optimize-db` | optimise the database |
+| `export` | export metadata to the metadata directory |
+| `backup` | back up the database |
+| `anonymize` | write an anonymised copy of the database |
 
-`STASH_ENDPOINT` overrides the default endpoint, `http://localhost:9999/graphql`:
+Options:
+
+```sh
+--endpoint <url>   override the GraphQL endpoint
+-h, --help         show usage
+-V, --version      show the version
+```
+
+An unrecognised command or flag exits 1 rather than being ignored, and a failed task exits
+nonzero, so `stash sig && ...` behaves as expected.
+
+The endpoint is taken from `--endpoint`, then `STASH_ENDPOINT`, then
+`http://localhost:9999/graphql`:
 
 ```sh
 STASH_ENDPOINT=http://media.local:9999/graphql stash
+stash --endpoint http://media.local:9999/graphql
 ```
 
 ## Build and install

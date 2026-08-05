@@ -235,7 +235,7 @@ test('exits nonzero when a rescan mutation comes back incomplete', async () => {
     return { data: { jobQueue: jobQueue() } };
   });
   try {
-    const result = await runCli(['--rescan'], stub.url);
+    const result = await runCli(['sig'], stub.url);
 
     assert.equal(result.code, 1, `expected exit 1, got ${String(result.code)}`);
     assert.match(result.stderr, /sig failed/, `expected a diagnostic, got:\n${result.stderr}`);
@@ -257,7 +257,7 @@ test('sig sends its inputs as graphql variables, not inline literals', async () 
     return { data: { jobQueue: jobQueue() } };
   });
   try {
-    const result = await runCli(['--rescan'], stub.url);
+    const result = await runCli(['sig'], stub.url);
     assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
 
     const sent = sentBody(stub.requests[0]);
@@ -290,7 +290,7 @@ test('exits zero when a rescan succeeds and prints the resulting queue', async (
     return { data: { jobQueue: jobQueue() } };
   });
   try {
-    const result = await runCli(['--rescan'], stub.url);
+    const result = await runCli(['sig'], stub.url);
 
     assert.equal(result.code, 0, `expected a clean exit, stderr:\n${result.stderr}`);
     assert.equal(stub.requests.length, 2, 'rescan should be followed by a status query');
