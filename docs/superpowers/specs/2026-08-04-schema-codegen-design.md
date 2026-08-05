@@ -37,7 +37,7 @@ objects (1,043 fields), 25 enums (116 values), 2 unions, 1 interface — plus 74
 fields and 125 mutation fields. Custom scalars: `Any`, `BoolMap`, `Int64`, `Map`,
 `PluginConfigMap`, `Time`, `Timestamp`, `Upload`.
 
-Expected output is roughly 3,000 lines. **This costs zero bytes in the artifact** —
+Expected output is roughly 4,500 lines. **This costs zero bytes in the artifact** —
 TypeScript types erase entirely — so the whole schema is generated rather than a subset.
 A subset would need a hand-maintained operation list that breaks the moment a command is
 added, and would require a live server to regenerate before the code could typecheck.
@@ -243,7 +243,9 @@ imports survives to runtime — while its field types stop being independently i
   is one command rather than a remembered procedure.
 
 `src/generated` is added to `.oxlintrc.json`'s `ignorePatterns`: lint has no business
-grading generated output, while `tsc` very much does and continues to check it.
+grading generated output. `tsc` still parses the committed file under `npm run typecheck`,
+but `skipLibCheck` limits that to a syntax check; the semantic check is the dedicated test
+described under Testing.
 
 ## Testing
 
@@ -259,9 +261,15 @@ The generator's printer is pure, so most of this needs no server:
 - **Output validity**: a test writes the printer's output for a fixture to a temp file and
   runs `tsc --noEmit` over it, so the generator cannot emit TypeScript that does not
   compile. This is the test that would catch a malformed emission that unit assertions on
-  strings would miss.
-- **The committed file** is checked by `npm run typecheck` like any other source, which is
-  what keeps the real 3,000-line output honest.
+  strings would miss. The temp file is written as a **`.ts`, not a `.d.ts`**, and the temp
+  project does **not** set `skipLibCheck`: `skipLibCheck` suppresses every semantic error
+  in a `.d.ts`, including the file under test's own, which would reduce this to a syntax
+  check. Types-only content compiles identically as a module either way.
+- **The committed file** is compiled by a dedicated test that copies it into a temp
+  directory as a `.ts` and typechecks it without `skipLibCheck`. `npm run typecheck` alone
+  does not establish this — the project sets `skipLibCheck: true`, so the committed `.d.ts`
+  is only syntax-checked there. The dedicated test is what keeps the real 4,500-line output
+  honest, and it needs no server, so it runs in CI.
 - **The rewiring** is covered by the existing `tests/stash.test.ts` and
   `tests/format.test.ts`, extended for the two outstanding corrections: a job with null
   `progress`, and a job in each of the six statuses. Null `subTasks` is already covered at

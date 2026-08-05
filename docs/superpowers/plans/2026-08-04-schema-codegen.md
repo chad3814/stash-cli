@@ -993,7 +993,7 @@ Expected: it reports roughly 301 schema types and writes several thousand lines.
 
 Run: `npm run typecheck`
 
-Expected: exit 0 — the real 3,000-line output compiles.
+Expected: exit 0. Note that this does not prove the real output *compiles*: the project sets `skipLibCheck: true`, which suppresses every semantic error in a `.d.ts`, so `npm run typecheck` only syntax-checks the committed file. The semantic check is the dedicated test in `tests/codegen.test.ts` that copies the committed artifact into a temp directory as a `.ts` and typechecks it without `skipLibCheck`.
 
 Run: `npm run codegen:check`
 

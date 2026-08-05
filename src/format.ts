@@ -50,12 +50,7 @@ export function formatEta(
   return `ETA: ${minutes.toString(10)}:${seconds.toString(10).padStart(2, '0')}`;
 }
 
-/**
- * Renders one job queue entry as the multi-line block the CLI prints.
- *
- * Note: when there is no ETA the progress line ends with a trailing space.
- * That is pre-existing behavior, preserved deliberately.
- */
+/** Renders one job queue entry as the multi-line block the CLI prints. */
 export function renderJob(job: JobDisplay, now = Date.now()): string {
   const emoji = STATUS_GLYPHS[job.status];
   // Job.progress is Float in the schema — nullable. Treat absent progress as zero

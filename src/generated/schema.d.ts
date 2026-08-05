@@ -4,6 +4,14 @@
  * Regenerate with: npm run codegen
  */
 
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export type AddTempDLNAIPInput = {
   address: string;
   /** Duration to enable, in minutes. 0 or null for indefinite. */
@@ -91,6 +99,7 @@ export type BulkGalleryUpdateInput = {
   clientMutationId?: string | null;
   ids?: string[] | null;
   code?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: BulkUpdateStrings | null;
   date?: string | null;
@@ -127,6 +136,7 @@ export type BulkImageUpdateInput = {
   code?: string | null;
   rating100?: number | null;
   organized?: boolean | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: BulkUpdateStrings | null;
   date?: string | null;
@@ -153,6 +163,7 @@ export type BulkPerformerUpdateInput = {
   clientMutationId?: string | null;
   ids?: string[] | null;
   disambiguation?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: BulkUpdateStrings | null;
   gender?: GenderEnum | null;
@@ -165,6 +176,7 @@ export type BulkPerformerUpdateInput = {
   fake_tits?: string | null;
   penis_length?: number | null;
   circumcised?: CircumcisedEnum | null;
+  /** @deprecated Use career_start and career_end */
   career_length?: string | null;
   career_start?: string | null;
   career_end?: string | null;
@@ -172,7 +184,9 @@ export type BulkPerformerUpdateInput = {
   piercings?: string | null;
   /** Duplicate aliases and those equal to name will result in an error (case-insensitive) */
   alias_list?: BulkUpdateStrings | null;
+  /** @deprecated Use urls */
   twitter?: string | null;
+  /** @deprecated Use urls */
   instagram?: string | null;
   favorite?: boolean | null;
   tag_ids?: BulkUpdateIds | null;
@@ -199,6 +213,7 @@ export type BulkSceneUpdateInput = {
   code?: string | null;
   details?: string | null;
   director?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: BulkUpdateStrings | null;
   date?: string | null;
@@ -209,12 +224,14 @@ export type BulkSceneUpdateInput = {
   performer_ids?: BulkUpdateIds | null;
   tag_ids?: BulkUpdateIds | null;
   group_ids?: BulkUpdateIds | null;
+  /** @deprecated Use group_ids */
   movie_ids?: BulkUpdateIds | null;
   custom_fields?: CustomFieldsInput | null;
 };
 
 export type BulkStudioUpdateInput = {
   ids: string[];
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: BulkUpdateStrings | null;
   parent_id?: string | null;
@@ -753,8 +770,8 @@ export type ConfigResult = {
   dlna: ConfigDLNAResult;
   scraping: ConfigScrapingResult;
   defaults: ConfigDefaultSettingsResult;
-  ui: Record<string, unknown>;
-  plugins: Record<string, unknown>;
+  ui: Record<string, JsonValue>;
+  plugins: Record<string, JsonValue>;
 };
 
 export type ConfigScrapingInput = {
@@ -807,15 +824,15 @@ export type CriterionModifier =
 
 export type CustomFieldCriterionInput = {
   field: string;
-  value?: unknown[] | null;
+  value?: JsonValue[] | null;
   modifier: CriterionModifier;
 };
 
 export type CustomFieldsInput = {
   /** If populated, the entire custom fields map will be replaced with this value */
-  full?: Record<string, unknown> | null;
+  full?: Record<string, JsonValue> | null;
   /** If populated, only the keys in this map will be updated */
-  partial?: Record<string, unknown> | null;
+  partial?: Record<string, JsonValue> | null;
   /** Remove any keys in this list */
   remove?: string[] | null;
 };
@@ -857,6 +874,7 @@ export type DisableDLNAInput = {
 };
 
 export type DuplicationCriterionInput = {
+  /** @deprecated Use phash field instead */
   duplicated?: boolean | null;
   /** Currently unimplemented. Intended for phash distance matching. */
   distance?: number | null;
@@ -887,12 +905,14 @@ export type ExportObjectsInput = {
   performers?: ExportObjectTypeInput | null;
   tags?: ExportObjectTypeInput | null;
   groups?: ExportObjectTypeInput | null;
+  /** @deprecated Use groups instead */
   movies?: ExportObjectTypeInput | null;
   galleries?: ExportObjectTypeInput | null;
   includeDependencies?: boolean | null;
 };
 
 export type FileDuplicationCriterionInput = {
+  /** @deprecated Use phash field instead */
   duplicated?: boolean | null;
   /** Currently unimplemented. Intended for phash distance matching. */
   distance?: number | null;
@@ -1119,7 +1139,7 @@ export type Gallery = {
   performers: Performer[];
   cover: Image | null;
   paths: GalleryPathsType;
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
   image: Image;
 };
 
@@ -1153,6 +1173,7 @@ export type GalleryChapterUpdateInput = {
 export type GalleryCreateInput = {
   title: string;
   code?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -1164,7 +1185,7 @@ export type GalleryCreateInput = {
   studio_id?: string | null;
   tag_ids?: string[] | null;
   performer_ids?: string[] | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 export type GalleryDestroyInput = {
@@ -1297,6 +1318,7 @@ export type GalleryUpdateInput = {
   id: string;
   title?: string | null;
   code?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -1429,7 +1451,7 @@ export type Group = {
   sub_group_count: number;
   scenes: Scene[];
   o_counter: number | null;
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
 };
 
 export type GroupCreateInput = {
@@ -1450,7 +1472,7 @@ export type GroupCreateInput = {
   front_image?: string | null;
   /** This should be a URL or a base64 encoded data URL */
   back_image?: string | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 /** GroupDescription represents a relationship to a group with a description of the relationship */
@@ -1636,7 +1658,11 @@ export type IdentifyMetadataOptionsInput = {
   /** defaults to true if not provided */
   setCoverImage?: boolean | null;
   setOrganized?: boolean | null;
-  /** defaults to true if not provided */
+  /**
+   * defaults to true if not provided
+   *
+   * @deprecated Use performerGenders
+   */
   includeMalePerformers?: boolean | null;
   /** Filter to only include performers with these genders. If not provided, all genders are included. */
   performerGenders?: GenderEnum[] | null;
@@ -1692,7 +1718,7 @@ export type Image = {
   studio: Studio | null;
   tags: Tag[];
   performers: Performer[];
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
 };
 
 export type ImageDestroyInput = {
@@ -1830,6 +1856,7 @@ export type ImageUpdateInput = {
   code?: string | null;
   rating100?: number | null;
   organized?: boolean | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -1986,6 +2013,7 @@ export type MovieCreateInput = {
   studio_id?: string | null;
   director?: string | null;
   synopsis?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   tag_ids?: string[] | null;
@@ -2043,6 +2071,7 @@ export type MovieUpdateInput = {
   studio_id?: string | null;
   director?: string | null;
   synopsis?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   tag_ids?: string[] | null;
@@ -2079,7 +2108,7 @@ export type Package = {
   sourceURL: string;
   /** The version of this package currently available from the remote source */
   source_package: Package | null;
-  metadata: Record<string, unknown>;
+  metadata: Record<string, JsonValue>;
 };
 
 export type PackageSource = {
@@ -2155,12 +2184,13 @@ export type Performer = {
   groups: Group[];
   /** @deprecated use groups instead */
   movies: Movie[];
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
 };
 
 export type PerformerCreateInput = {
   name: string;
   disambiguation?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   gender?: GenderEnum | null;
@@ -2173,6 +2203,7 @@ export type PerformerCreateInput = {
   fake_tits?: string | null;
   penis_length?: number | null;
   circumcised?: CircumcisedEnum | null;
+  /** @deprecated Use career_start and career_end */
   career_length?: string | null;
   career_start?: string | null;
   career_end?: string | null;
@@ -2180,7 +2211,9 @@ export type PerformerCreateInput = {
   piercings?: string | null;
   /** Duplicate aliases and those equal to name will be ignored (case-insensitive) */
   alias_list?: string[] | null;
+  /** @deprecated Use urls */
   twitter?: string | null;
+  /** @deprecated Use urls */
   instagram?: string | null;
   favorite?: boolean | null;
   tag_ids?: string[] | null;
@@ -2193,7 +2226,7 @@ export type PerformerCreateInput = {
   hair_color?: string | null;
   weight?: number | null;
   ignore_auto_tag?: boolean | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 export type PerformerDestroyInput = {
@@ -2229,7 +2262,11 @@ export type PerformerFilterType = {
   penis_length?: FloatCriterionInput | null;
   /** Filter by circumcision */
   circumcised?: CircumcisionCriterionInput | null;
-  /** Deprecated: use career_start and career_end. This filter is non-functional. */
+  /**
+   * Deprecated: use career_start and career_end. This filter is non-functional.
+   *
+   * @deprecated Use career_start and career_end
+   */
   career_length?: StringCriterionInput | null;
   /** Filter by career start */
   career_start?: DateCriterionInput | null;
@@ -2261,7 +2298,11 @@ export type PerformerFilterType = {
   play_count?: IntCriterionInput | null;
   /** Filter by o count */
   o_counter?: IntCriterionInput | null;
-  /** Filter by StashID */
+  /**
+   * Filter by StashID
+   *
+   * @deprecated use stash_ids_endpoint instead
+   */
   stash_id_endpoint?: StashIDCriterionInput | null;
   /** Filter by StashIDs */
   stash_ids_endpoint?: StashIDsCriterionInput | null;
@@ -2313,6 +2354,7 @@ export type PerformerUpdateInput = {
   id: string;
   name?: string | null;
   disambiguation?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   gender?: GenderEnum | null;
@@ -2325,6 +2367,7 @@ export type PerformerUpdateInput = {
   fake_tits?: string | null;
   penis_length?: number | null;
   circumcised?: CircumcisedEnum | null;
+  /** @deprecated Use career_start and career_end */
   career_length?: string | null;
   career_start?: string | null;
   career_end?: string | null;
@@ -2332,7 +2375,9 @@ export type PerformerUpdateInput = {
   piercings?: string | null;
   /** Duplicate aliases and those equal to name will be ignored (case-insensitive) */
   alias_list?: string[] | null;
+  /** @deprecated Use urls */
   twitter?: string | null;
+  /** @deprecated Use urls */
   instagram?: string | null;
   favorite?: boolean | null;
   tag_ids?: string[] | null;
@@ -2514,7 +2559,7 @@ export type SQLQueryResult = {
   /** The column names, in the order they appear in the result set. */
   columns: string[];
   /** The returned rows. */
-  rows: ((unknown | null)[])[];
+  rows: ((JsonValue | null)[])[];
 };
 
 export type SaveFilterInput = {
@@ -2523,8 +2568,8 @@ export type SaveFilterInput = {
   mode: FilterMode;
   name: string;
   find_filter?: FindFilterType | null;
-  object_filter?: Record<string, unknown> | null;
-  ui_options?: Record<string, unknown> | null;
+  object_filter?: Record<string, JsonValue> | null;
+  ui_options?: Record<string, JsonValue> | null;
 };
 
 export type SavedFilter = {
@@ -2538,8 +2583,8 @@ export type SavedFilter = {
    */
   filter: string;
   find_filter: SavedFindFilterType | null;
-  object_filter: Record<string, unknown> | null;
-  ui_options: Record<string, unknown> | null;
+  object_filter: Record<string, JsonValue> | null;
+  ui_options: Record<string, JsonValue> | null;
 };
 
 export type SavedFindFilterType = {
@@ -2643,7 +2688,7 @@ export type Scene = {
   tags: Tag[];
   performers: Performer[];
   stash_ids: StashID[];
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
   /** Return valid stream paths */
   sceneStreams: SceneStreamEndpoint[];
 };
@@ -2653,6 +2698,7 @@ export type SceneCreateInput = {
   code?: string | null;
   details?: string | null;
   director?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -2662,6 +2708,7 @@ export type SceneCreateInput = {
   gallery_ids?: string[] | null;
   performer_ids?: string[] | null;
   groups?: SceneGroupInput[] | null;
+  /** @deprecated Use groups */
   movies?: SceneMovieInput[] | null;
   tag_ids?: string[] | null;
   /** This should be a URL or a base64 encoded data URL */
@@ -2673,7 +2720,7 @@ export type SceneCreateInput = {
    * Files must not already be primary for another scene.
    */
   file_ids?: string[] | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 export type SceneDestroyInput = {
@@ -2708,7 +2755,11 @@ export type SceneFilterType = {
   oshash?: StringCriterionInput | null;
   /** Filter by file checksum */
   checksum?: StringCriterionInput | null;
-  /** Filter by file phash */
+  /**
+   * Filter by file phash
+   *
+   * @deprecated Use phash_distance instead
+   */
   phash?: StringCriterionInput | null;
   /** Filter by file phash distance */
   phash_distance?: PhashDistanceCriterionInput | null;
@@ -2743,7 +2794,11 @@ export type SceneFilterType = {
   is_missing?: string | null;
   /** Filter to only include scenes with this studio */
   studios?: HierarchicalMultiCriterionInput | null;
-  /** Filter to only include scenes with this movie */
+  /**
+   * Filter to only include scenes with this movie
+   *
+   * @deprecated use groups instead
+   */
   movies?: MultiCriterionInput | null;
   /** Filter to only include scenes with this group */
   groups?: HierarchicalMultiCriterionInput | null;
@@ -2763,7 +2818,11 @@ export type SceneFilterType = {
   performers?: MultiCriterionInput | null;
   /** Filter by performer count */
   performer_count?: IntCriterionInput | null;
-  /** Filter by StashID */
+  /**
+   * Filter by StashID
+   *
+   * @deprecated use stash_ids_endpoint instead
+   */
   stash_id_endpoint?: StashIDCriterionInput | null;
   /** Filter by StashIDs */
   stash_ids_endpoint?: StashIDsCriterionInput | null;
@@ -2799,7 +2858,11 @@ export type SceneFilterType = {
   studios_filter?: StudioFilterType | null;
   /** Filter by related tags that meet this criteria */
   tags_filter?: TagFilterType | null;
-  /** Filter by related movies that meet this criteria */
+  /**
+   * Filter by related movies that meet this criteria
+   *
+   * @deprecated use groups_filter instead
+   */
   movies_filter?: MovieFilterType | null;
   /** Filter by related groups that meet this criteria */
   groups_filter?: GroupFilterType | null;
@@ -2980,16 +3043,19 @@ export type SceneUpdateInput = {
   code?: string | null;
   details?: string | null;
   director?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
   rating100?: number | null;
+  /** @deprecated Unsupported - Use sceneIncrementO/sceneDecrementO */
   o_counter?: number | null;
   organized?: boolean | null;
   studio_id?: string | null;
   gallery_ids?: string[] | null;
   performer_ids?: string[] | null;
   groups?: SceneGroupInput[] | null;
+  /** @deprecated Use groups */
   movies?: SceneMovieInput[] | null;
   tag_ids?: string[] | null;
   /** This should be a URL or a base64 encoded data URL */
@@ -2999,7 +3065,11 @@ export type SceneUpdateInput = {
   resume_time?: number | null;
   /** The total time a scene has spent playing */
   play_duration?: number | null;
-  /** The number ot times a scene has been played */
+  /**
+   * The number ot times a scene has been played
+   *
+   * @deprecated Unsupported - Use sceneIncrementPlayCount/sceneDecrementPlayCount
+   */
   play_count?: number | null;
   primary_file_id?: string | null;
   custom_fields?: CustomFieldsInput | null;
@@ -3126,6 +3196,7 @@ export type ScrapedGalleryInput = {
   code?: string | null;
   details?: string | null;
   photographer?: string | null;
+  /** @deprecated use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -3209,6 +3280,7 @@ export type ScrapedMovieInput = {
   date?: string | null;
   rating?: string | null;
   director?: string | null;
+  /** @deprecated use urls */
   url?: string | null;
   urls?: string[] | null;
   synopsis?: string | null;
@@ -3265,9 +3337,12 @@ export type ScrapedPerformerInput = {
   name?: string | null;
   disambiguation?: string | null;
   gender?: string | null;
+  /** @deprecated use urls */
   url?: string | null;
   urls?: string[] | null;
+  /** @deprecated use urls */
   twitter?: string | null;
+  /** @deprecated use urls */
   instagram?: string | null;
   birthdate?: string | null;
   ethnicity?: string | null;
@@ -3278,6 +3353,7 @@ export type ScrapedPerformerInput = {
   fake_tits?: string | null;
   penis_length?: string | null;
   circumcised?: string | null;
+  /** @deprecated Use career_start and career_end */
   career_length?: string | null;
   career_start?: string | null;
   career_end?: string | null;
@@ -3319,6 +3395,7 @@ export type ScrapedSceneInput = {
   code?: string | null;
   details?: string | null;
   director?: string | null;
+  /** @deprecated use urls */
   url?: string | null;
   urls?: string[] | null;
   date?: string | null;
@@ -3387,7 +3464,11 @@ export type ScraperSource = {
 };
 
 export type ScraperSourceInput = {
-  /** Index of the configured stash-box instance to use. Should be unset if scraper_id is set */
+  /**
+   * Index of the configured stash-box instance to use. Should be unset if scraper_id is set
+   *
+   * @deprecated use stash_box_endpoint
+   */
   stash_box_index?: number | null;
   /** Stash-box endpoint */
   stash_box_endpoint?: string | null;
@@ -3405,8 +3486,8 @@ export type SetDefaultFilterInput = {
   mode: FilterMode;
   /** null to clear */
   find_filter?: FindFilterType | null;
-  object_filter?: Record<string, unknown> | null;
-  ui_options?: Record<string, unknown> | null;
+  object_filter?: Record<string, JsonValue> | null;
+  ui_options?: Record<string, JsonValue> | null;
 };
 
 export type SetFingerprintsInput = {
@@ -3448,7 +3529,11 @@ export type StashBox = {
  * If none are set, then all existing items will be tagged.
  */
 export type StashBoxBatchTagInput = {
-  /** Stash endpoint to use for the tagging */
+  /**
+   * Stash endpoint to use for the tagging
+   *
+   * @deprecated use stash_box_endpoint
+   */
   endpoint?: number | null;
   /** Endpoint of the stash-box instance to use */
   stash_box_endpoint?: string | null;
@@ -3467,14 +3552,23 @@ export type StashBoxBatchTagInput = {
   names?: string[] | null;
   /** Stash IDs of the items in the stash-box instance to search for and create */
   stash_ids?: string[] | null;
-  /** IDs in stash of the performers to update */
+  /**
+   * IDs in stash of the performers to update
+   *
+   * @deprecated use ids
+   */
   performer_ids?: string[] | null;
-  /** Names of the performers in the stash-box instance to search for and create */
+  /**
+   * Names of the performers in the stash-box instance to search for and create
+   *
+   * @deprecated use names
+   */
   performer_names?: string[] | null;
 };
 
 export type StashBoxDraftSubmissionInput = {
   id: string;
+  /** @deprecated use stash_box_endpoint */
   stash_box_index?: number | null;
   stash_box_endpoint?: string | null;
 };
@@ -3487,6 +3581,7 @@ export type StashBoxFingerprint = {
 
 export type StashBoxFingerprintSubmissionInput = {
   scene_ids: string[];
+  /** @deprecated use stash_box_endpoint */
   stash_box_index?: number | null;
   stash_box_endpoint?: string | null;
 };
@@ -3499,7 +3594,11 @@ export type StashBoxInput = {
 };
 
 export type StashBoxPerformerQueryInput = {
-  /** Index of the configured stash-box instance to use */
+  /**
+   * Index of the configured stash-box instance to use
+   *
+   * @deprecated use stash_box_endpoint
+   */
   stash_box_index?: number | null;
   /** Endpoint of the stash-box instance to use */
   stash_box_endpoint?: string | null;
@@ -3515,7 +3614,11 @@ export type StashBoxPerformerQueryResult = {
 };
 
 export type StashBoxSceneQueryInput = {
-  /** Index of the configured stash-box instance to use */
+  /**
+   * Index of the configured stash-box instance to use
+   *
+   * @deprecated use stash_box_endpoint
+   */
   stash_box_index?: number | null;
   /** Endpoint of the stash-box instance to use */
   stash_box_endpoint?: string | null;
@@ -3643,11 +3746,12 @@ export type Studio = {
   /** @deprecated use groups instead */
   movies: Movie[];
   o_counter: number | null;
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
 };
 
 export type StudioCreateInput = {
   name: string;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   parent_id?: string | null;
@@ -3662,7 +3766,7 @@ export type StudioCreateInput = {
   tag_ids?: string[] | null;
   ignore_auto_tag?: boolean | null;
   organized?: boolean | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 export type StudioDestroyInput = {
@@ -3677,7 +3781,11 @@ export type StudioFilterType = {
   details?: StringCriterionInput | null;
   /** Filter to only include studios with this parent studio */
   parents?: MultiCriterionInput | null;
-  /** Filter by StashID */
+  /**
+   * Filter by StashID
+   *
+   * @deprecated use stash_ids_endpoint instead
+   */
   stash_id_endpoint?: StashIDCriterionInput | null;
   /** Filter by StashIDs */
   stash_ids_endpoint?: StashIDsCriterionInput | null;
@@ -3726,6 +3834,7 @@ export type StudioFilterType = {
 export type StudioUpdateInput = {
   id: string;
   name?: string | null;
+  /** @deprecated Use urls */
   url?: string | null;
   urls?: string[] | null;
   parent_id?: string | null;
@@ -3787,7 +3896,7 @@ export type Tag = {
   children: Tag[];
   parent_count: number;
   child_count: number;
-  custom_fields: Record<string, unknown>;
+  custom_fields: Record<string, JsonValue>;
 };
 
 export type TagCreateInput = {
@@ -3804,7 +3913,7 @@ export type TagCreateInput = {
   stash_ids?: StashIDInput[] | null;
   parent_ids?: string[] | null;
   child_ids?: string[] | null;
-  custom_fields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, JsonValue> | null;
 };
 
 export type TagDestroyInput = {
@@ -3853,7 +3962,11 @@ export type TagFilterType = {
   child_count?: IntCriterionInput | null;
   /** Filter by autotag ignore value */
   ignore_auto_tag?: boolean | null;
-  /** Filter by StashID */
+  /**
+   * Filter by StashID
+   *
+   * @deprecated use stash_ids_endpoint instead
+   */
   stash_id_endpoint?: StashIDCriterionInput | null;
   /** Filter by StashID */
   stash_ids_endpoint?: StashIDsCriterionInput | null;
@@ -4256,18 +4369,18 @@ export type Mutations = {
   configureScraping: { args: { input: ConfigScrapingInput }; result: ConfigScrapingResult };
   configureDefaults: { args: { input: ConfigDefaultSettingsInput }; result: ConfigDefaultSettingsResult };
   /** overwrites the entire plugin configuration for the given plugin */
-  configurePlugin: { args: { plugin_id: string; input: Record<string, unknown> }; result: Record<string, unknown> };
+  configurePlugin: { args: { plugin_id: string; input: Record<string, JsonValue> }; result: Record<string, JsonValue> };
   /**
    * overwrites the UI configuration
    * if input is provided, then the entire UI configuration is replaced
    * if partial is provided, then the partial UI configuration is merged into the existing UI configuration
    */
-  configureUI: { args: { input?: Record<string, unknown> | null; partial?: Record<string, unknown> | null }; result: Record<string, unknown> };
+  configureUI: { args: { input?: Record<string, JsonValue> | null; partial?: Record<string, JsonValue> | null }; result: Record<string, JsonValue> };
   /**
    * sets a single UI key value
    * key is a dot separated path to the value
    */
-  configureUISetting: { args: { key: string; value?: unknown | null }; result: Record<string, unknown> };
+  configureUISetting: { args: { key: string; value?: JsonValue | null }; result: Record<string, JsonValue> };
   /** Generate and set (or clear) API key */
   generateAPIKey: { args: { input: GenerateAPIKeyInput }; result: string };
   /** Returns a link to download the result */
@@ -4314,12 +4427,12 @@ export type Mutations = {
    * If no task_name is provided, then the plugin will be executed with the arguments provided only.
    * Returns the job ID
    */
-  runPluginTask: { args: { plugin_id: string; task_name?: string | null; description?: string | null; args?: PluginArgInput[] | null; args_map?: Record<string, unknown> | null }; result: string };
+  runPluginTask: { args: { plugin_id: string; task_name?: string | null; description?: string | null; args?: PluginArgInput[] | null; args_map?: Record<string, JsonValue> | null }; result: string };
   /**
    * Runs a plugin operation. The operation is run immediately and does not use the job queue.
    * Returns a map of the result.
    */
-  runPluginOperation: { args: { plugin_id: string; args?: Record<string, unknown> | null }; result: unknown | null };
+  runPluginOperation: { args: { plugin_id: string; args?: Record<string, JsonValue> | null }; result: JsonValue | null };
   reloadPlugins: { args: Record<string, never>; result: boolean };
   /**
    * Installs the given packages.
@@ -4354,9 +4467,9 @@ export type Mutations = {
   /** Backup the database. Optionally returns a link to download the database file */
   backupDatabase: { args: { input: BackupDatabaseInput }; result: string | null };
   /** DANGEROUS: Execute an arbitrary SQL statement that returns rows. */
-  querySQL: { args: { sql: string; args?: (unknown | null)[] | null }; result: SQLQueryResult };
+  querySQL: { args: { sql: string; args?: (JsonValue | null)[] | null }; result: SQLQueryResult };
   /** DANGEROUS: Execute an arbitrary SQL statement without returning any rows. */
-  execSQL: { args: { sql: string; args?: (unknown | null)[] | null }; result: SQLExecResult };
+  execSQL: { args: { sql: string; args?: (JsonValue | null)[] | null }; result: SQLExecResult };
   /** Run batch performer tag task. Returns the job ID. */
   stashBoxBatchPerformerTag: { args: { input: StashBoxBatchTagInput }; result: string };
   /** Run batch studio tag task. Returns the job ID. */

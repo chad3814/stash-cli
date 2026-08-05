@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -73,9 +73,9 @@ test('printTypeRef maps every custom scalar', () => {
     Time: 'string',
     Timestamp: 'string',
     BoolMap: 'Record<string, boolean>',
-    Map: 'Record<string, unknown>',
-    PluginConfigMap: 'Record<string, unknown>',
-    Any: 'unknown',
+    Map: 'Record<string, JsonValue>',
+    PluginConfigMap: 'Record<string, JsonValue>',
+    Any: 'JsonValue',
     Upload: 'never',
   };
   for (const [scalar, ts] of Object.entries(expected)) {
@@ -92,7 +92,7 @@ test('printTypeRef throws on an unmapped scalar rather than guessing', () => {
 });
 
 test('printTypeRef maps a Record-typed scalar inside a list without parenthesising', () => {
-  assert.equal(printTypeRef(nonNull(list(nonNull(named('SCALAR', 'Map'))))), 'Record<string, unknown>[]');
+  assert.equal(printTypeRef(nonNull(list(nonNull(named('SCALAR', 'Map'))))), 'Record<string, JsonValue>[]');
 });
 
 test('printJsDoc returns nothing when there is no description or deprecation', () => {
@@ -161,6 +161,25 @@ test('printInputObjectType makes nullable fields optional', () => {
   assert.equal(
     printInputObjectType(input),
     'export type CleanMetadataInput = {\n  dryRun: boolean;\n  paths?: string[] | null;\n};\n',
+  );
+});
+
+test('printInputObjectType marks a deprecated input field', () => {
+  const input: IntrospectionType = {
+    kind: 'INPUT_OBJECT',
+    name: 'SceneUpdateInput',
+    inputFields: [
+      { name: 'url', isDeprecated: true, deprecationReason: 'Use urls', type: named('SCALAR', 'String') },
+      { name: 'urls', type: list(nonNull(STRING)) },
+    ],
+  };
+  assert.equal(
+    printInputObjectType(input),
+    'export type SceneUpdateInput = {\n' +
+      '  /** @deprecated Use urls */\n' +
+      '  url?: string | null;\n' +
+      '  urls?: string[] | null;\n' +
+      '};\n',
   );
 });
 
@@ -342,22 +361,59 @@ test('introspectionToTypeScript is deterministic', () => {
   assert.equal(first, second, 'regeneration must be byte-identical or every diff is noise');
 });
 
-test('introspectionToTypeScript output compiles', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'stash-codegen-'));
-  const file = join(dir, 'schema.d.ts');
-  await writeFile(file, introspectionToTypeScript(schemaFixture()), 'utf8');
+test('introspectionToTypeScript emits the JsonValue alias the JSON scalars refer to', () => {
+  const out = introspectionToTypeScript(schemaFixture());
+  assert.match(out, /export type JsonValue =/);
+  assert.ok(
+    out.indexOf('export type JsonValue =') < out.indexOf('export type Job ='),
+    'the alias must precede the declarations that use it, for readability',
+  );
+});
+
+test('introspectionToTypeScript rejects a schema that would collide with the JsonValue alias', () => {
+  const schema = schemaFixture();
+  schema.types.push({ kind: 'OBJECT', name: 'JsonValue', fields: [{ name: 'id', type: nonNull(named('SCALAR', 'ID')) }] });
+  assert.throws(() => introspectionToTypeScript(schema), /JsonValue/);
+});
+
+/**
+ * Compiles a directory as a standalone project with no skipLibCheck.
+ *
+ * skipLibCheck suppresses every semantic error in a .d.ts — including a dangling type
+ * reference in the file under test — so the subject is always written as a .ts. Types-only
+ * content compiles identically either way.
+ */
+async function compileAsProject(dir: string, entry: string): Promise<{ code: number | null; output: string }> {
+  const tsconfigPath = join(dir, 'tsconfig.json');
   // TypeScript 7's native CLI rejects the ad-hoc single-file invocation (an explicit
   // file argument alongside flags conflicts with the ambient project tsconfig.json),
   // so a minimal project is used instead.
-  const tsconfigPath = join(dir, 'tsconfig.json');
   await writeFile(
     tsconfigPath,
     JSON.stringify({
-      compilerOptions: { strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true },
-      include: ['schema.d.ts'],
+      compilerOptions: { strict: true, exactOptionalPropertyTypes: true, noEmit: true },
+      include: [entry],
     }),
     'utf8',
   );
   const result = await run('npx', ['tsc', '--noEmit', '--project', tsconfigPath], process.cwd());
-  assert.equal(result.code, 0, `generated output does not compile:\n${result.stdout}\n${result.stderr}`);
+  return { code: result.code, output: `${result.stdout}\n${result.stderr}` };
+}
+
+test('introspectionToTypeScript output compiles', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'stash-codegen-'));
+  await writeFile(join(dir, 'schema.ts'), introspectionToTypeScript(schemaFixture()), 'utf8');
+  const result = await compileAsProject(dir, 'schema.ts');
+  assert.equal(result.code, 0, `generated output does not compile:\n${result.output}`);
+});
+
+test('the committed src/generated/schema.d.ts compiles', { timeout: 300_000 }, async () => {
+  // npm run typecheck cannot establish this: the project sets skipLibCheck, which silences
+  // every semantic error in a .d.ts. Copying the artifact in as a .ts is what actually
+  // holds the real output honest.
+  const artifact = join(import.meta.dirname, '..', 'src', 'generated', 'schema.d.ts');
+  const dir = await mkdtemp(join(tmpdir(), 'stash-artifact-'));
+  await writeFile(join(dir, 'schema.ts'), await readFile(artifact, 'utf8'), 'utf8');
+  const result = await compileAsProject(dir, 'schema.ts');
+  assert.equal(result.code, 0, `the committed schema.d.ts does not compile:\n${result.output}`);
 });

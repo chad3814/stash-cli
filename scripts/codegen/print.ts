@@ -8,6 +8,9 @@ import type {
 
 // ─── Scalar mapping ─────────────────────────────────────────────────────────
 
+/** The name of the JSON alias the printer emits; see JSON_VALUE_ALIAS. */
+const JSON_VALUE = 'JsonValue';
+
 export const SCALAR_MAP: Record<string, string> = {
   ID: 'string',
   String: 'string',
@@ -17,10 +20,11 @@ export const SCALAR_MAP: Record<string, string> = {
   Boolean: 'boolean',
   Time: 'string',
   Timestamp: 'string',
+  // BoolMap stays specific: the schema says the values are booleans.
   BoolMap: 'Record<string, boolean>',
-  Map: 'Record<string, unknown>',
-  PluginConfigMap: 'Record<string, unknown>',
-  Any: 'unknown',
+  Map: `Record<string, ${JSON_VALUE}>`,
+  PluginConfigMap: `Record<string, ${JSON_VALUE}>`,
+  Any: JSON_VALUE,
   Upload: 'never',
 };
 
@@ -155,10 +159,25 @@ const BANNER = `/**
  */
 `;
 
+// The JSON scalars (Any, Map, PluginConfigMap) really are JSON, not arbitrary values.
+// A recursive alias says so, and still forces narrowing at the use site.
+const JSON_VALUE_ALIAS = `export type ${JSON_VALUE} =
+  | string
+  | number
+  | boolean
+  | null
+  | ${JSON_VALUE}[]
+  | { [key: string]: ${JSON_VALUE} };
+`;
+
 function printArgs(args: IntrospectionInputValue[]): string {
   if (args.length === 0) {
     return 'Record<string, never>';
   }
+  // Args are printed inline inside the operation maps, where a JSDoc block cannot go,
+  // so a deprecated argument carries no @deprecated marker. Deliberate: the alternative
+  // is a per-argument declaration for every operation. Input object fields and output
+  // fields do get markers.
   const body = args
     .map((arg) => `${arg.name}${isOptionalInput(arg) ? '?' : ''}: ${printTypeRef(arg.type)}`)
     .join('; ');
@@ -213,7 +232,17 @@ export function introspectionToTypeScript(schema: IntrospectionSchema): string {
     // byte-identical regeneration.
     .toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-  const sections = [BANNER, ...declarable.map(printDeclaration)];
+  // JsonValue is the printer's own name in the generated file's namespace. No stash type
+  // uses it today; if one ever does, two `export type JsonValue` declarations would be
+  // emitted, so say which name collided rather than leaving tsc to report a duplicate
+  // identifier somewhere in several thousand lines.
+  if (declarable.some((type) => type.name === JSON_VALUE)) {
+    throw new Error(
+      `the schema declares a type named '${JSON_VALUE}', which collides with the printer's JSON alias — rename the alias in scripts/codegen/print.ts`,
+    );
+  }
+
+  const sections = [BANNER, JSON_VALUE_ALIAS, ...declarable.map(printDeclaration)];
 
   for (const [rootName, mapName] of roots) {
     const root = schema.types.find((type) => type.name === rootName);

@@ -18,6 +18,8 @@ export type IntrospectionInputValue = {
   name: string;
   description?: string | null;
   defaultValue?: string | null;
+  isDeprecated?: boolean;
+  deprecationReason?: string | null;
   type: TypeRef;
 };
 
@@ -72,7 +74,11 @@ query {
         args { ...InputValue }
         type { ...TypeRef }
       }
-      inputFields { ...InputValue }
+      # Deprecated input fields are omitted by default under the current spec, which
+      # would drop them from the output entirely rather than merely leaving them
+      # unmarked. This stash server returns them either way; asking explicitly keeps
+      # that true against a server that honours the default.
+      inputFields(includeDeprecated: true) { ...InputValue }
       enumValues(includeDeprecated: true) {
         name
         description
@@ -88,6 +94,8 @@ fragment InputValue on __InputValue {
   name
   description
   defaultValue
+  isDeprecated
+  deprecationReason
   type { ...TypeRef }
 }
 

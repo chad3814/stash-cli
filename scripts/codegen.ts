@@ -31,4 +31,14 @@ const source = introspectionToTypeScript(schema);
 await mkdir(dirname(outfile), { recursive: true });
 await writeFile(outfile, source, 'utf8');
 
-console.log(`wrote ${outfile} (${source.split('\n').length} lines, ${schema.types.length} schema types)`);
+// schema.types is the raw introspection total: it counts the __-prefixed meta-types, and
+// the scalars and root types that get no declaration of their own. Report what was
+// actually emitted, counted from the output rather than by subtracting a known number of
+// drops from the raw total.
+const lines = source.split('\n');
+const declarations = lines.filter((line) => line.startsWith('export type ')).length;
+const named = schema.types.filter((type) => !type.name.startsWith('__')).length;
+
+console.log(
+  `wrote ${outfile} (${lines.length} lines, ${declarations} declarations from ${named} named types)`,
+);
