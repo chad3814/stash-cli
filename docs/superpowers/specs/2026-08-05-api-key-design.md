@@ -77,11 +77,23 @@ export function authHeaders(apiKey?: string): Record<string, string>;
 export function authFailureMessage(status: number, target: string, apiKey?: string): string | undefined;
 ```
 
-`resolveApiKey` **trims**, and a value that is only whitespace counts as no key at all.
-Both matter in practice: `STASH_API_KEY=$(cat key.txt)` picks up a trailing newline, and a
-header value with a stray newline is at best rejected and at worst refused outright by the
-HTTP layer — a failure whose cause would be invisible in the message. Trimming turns a
-whole class of confusing 401s into either a working request or a clean "no key set".
+`resolveApiKey` **trims**, and a value that is only whitespace counts as no key at all,
+because `STASH_API_KEY=$(cat key.txt)` picks up a trailing newline.
+
+> *Correction, made after implementation.* This section originally justified the trim by
+> claiming a header value with a stray newline "is at best rejected and at worst refused
+> outright by the HTTP layer — a failure whose cause would be invisible in the message".
+> The second half is false, and dangerously so: undici quotes the offending value **in
+> full** in its `TypeError`. Because that is not an `OperationalError`, it reached stderr
+> with a stack trace, printing the key. The cause was not invisible — the key was.
+>
+> Trimming never addressed this, because it only touches the ends and the damaging case is
+> a break in the *middle*, which is exactly what a wrapped or multi-line key file yields.
+> Two things now cover it: `authHeaders` refuses a key containing NUL, CR, or LF before it
+> reaches `fetch`, naming the variable and never the value; and `index.ts` renders every
+> error through `redactApiKey`, so a message this code did not write — undici's, or a
+> `caused by:` chain — cannot disclose the key either. Both were verified to work
+> independently of the other.
 
 `target` is the URL the request was made to, passed by the caller. `src/graphql.ts` has an
 endpoint and `src/download.ts` has a download URL; both are useful to name in the message,
@@ -99,7 +111,7 @@ class of ambient-environment dependency that `runCli`'s `STASH_ENDPOINT` default
 ## Behaviour
 
 **Key set.** `ApiKey: <value>` is added to the GraphQL request and to the download
-request. Both hit the same origin, so a server that authenticates one authenticates the
+request. A server that authenticates one authenticates the
 other; without this, `backup --download` would run the mutation successfully and then fail
 to fetch the result, leaving the user with a completed job and no file.
 
@@ -140,7 +152,20 @@ These are requirements, not conventions.
   deliberately not exposed — this CLI reads a key, it does not manage one.
 - A credential per endpoint. One key for one server; someone with two servers exports a
   different value.
-- Authenticating anything but stash's own origin.
+- **Restricting which origin receives the key.** This was originally listed as
+  "authenticating anything but stash's own origin", implying a boundary the code enforces.
+  It does not, and cannot cheaply: the download link stash returns is an **absolute** URL
+  (a real one is `http://127.0.0.1:9999/downloads/2276383b/stash-go.sqlite.anonymous...`),
+  so the server chooses the host, and neither transport pins `redirect`.
+
+  A strict same-origin check is not viable — the real link's `127.0.0.1:9999` and the
+  default endpoint's `localhost:9999` are different origins to `URL`, so it would reject
+  the ordinary case. Accepting this is the right call on the merits rather than only for
+  convenience: any host that can hand out a link or a redirect **already holds the key**,
+  having received it on the request that produced the link, so redirecting it elsewhere
+  grants an attacker nothing new. If defence in depth is ever wanted, the shape that works
+  is a loopback-normalised comparison — treat `localhost`, `127.0.0.1`, and `::1` as one
+  host and compare host and port.
 
 ## Files
 

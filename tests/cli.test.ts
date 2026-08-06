@@ -79,6 +79,9 @@ function runCli(args: string[], env: Record<string, string | undefined> = {}): P
   return run(process.execPath, ['--import', 'tsx', 'index.ts', ...args], root, {
     ...process.env,
     STASH_ENDPOINT: DEAD_ENDPOINT,
+    // Also pinned so a developer's exported key is never forwarded to a stub: the same
+    // ambient-environment argument that made the endpoint default necessary.
+    STASH_API_KEY: '',
     ...env,
   });
 }

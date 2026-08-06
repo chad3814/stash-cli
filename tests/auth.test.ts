@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { authFailureMessage, authHeaders, resolveApiKey } from '../src/auth.js';
+import { authFailureMessage, authHeaders, redactApiKey, resolveApiKey } from '../src/auth.js';
 
 test('an explicit key is returned as given', () => {
   assert.equal(resolveApiKey('abc123'), 'abc123');
@@ -83,5 +83,50 @@ test('no message ever contains the key itself', () => {
     const message = authFailureMessage(status, 'http://stash/graphql', 'super-secret-value');
     assert.ok(message !== undefined);
     assert.doesNotMatch(message, /super-secret-value/);
+  }
+});
+
+test('a key with a line break is refused before it can be sent', () => {
+  // Not tidiness: undici validates header values itself and quotes the offending value in
+  // full in its TypeError, which is not an OperationalError and so reached stderr with a
+  // stack trace. Trimming does not cover this — the break is in the middle, which is what
+  // reading a wrapped key file produces.
+  for (const bad of ['abc\ndef', 'abc\rdef', 'abc\0def']) {
+    assert.throws(
+      () => authHeaders(bad),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /STASH_API_KEY contains a line break/);
+        // The whole point: the message must not quote the value it is complaining about.
+        assert.doesNotMatch(error.message, /abc/);
+        assert.doesNotMatch(error.message, /def/);
+        return true;
+      },
+    );
+  }
+});
+
+test('redactApiKey replaces the key from the environment', () => {
+  const restore = process.env['STASH_API_KEY'];
+  process.env['STASH_API_KEY'] = 'zzz-redact-me-9f3a-zzz';
+  try {
+    const rendered = redactApiKey('TypeError: bad header "zzz-redact-me-9f3a-zzz" somewhere');
+    assert.doesNotMatch(rendered, /zzz-redact-me-9f3a-zzz/);
+    assert.match(rendered, /\[redacted\]/);
+    assert.match(rendered, /TypeError: bad header/);
+  } finally {
+    if (restore === undefined) { delete process.env['STASH_API_KEY']; } else { process.env['STASH_API_KEY'] = restore; }
+  }
+});
+
+test('redactApiKey leaves text alone when a key is too short to redact safely', () => {
+  // A one-character key would rewrite every occurrence of that character in a response
+  // body, destroying the diagnostic the message exists to show. Real keys are JWTs.
+  const restore = process.env['STASH_API_KEY'];
+  process.env['STASH_API_KEY'] = 'a';
+  try {
+    assert.equal(redactApiKey('a perfectly ordinary sentence'), 'a perfectly ordinary sentence');
+  } finally {
+    if (restore === undefined) { delete process.env['STASH_API_KEY']; } else { process.env['STASH_API_KEY'] = restore; }
   }
 });

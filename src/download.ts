@@ -7,8 +7,14 @@ import { authFailureMessage, authHeaders } from './auth.js';
 import { OperationalError } from './errors.js';
 
 /**
- * Fetches `link` — resolved against `endpoint`'s origin, since stash returns a
- * server-relative path — and streams it into `directory`.
+ * Fetches `link` and streams it into `directory`.
+ *
+ * `link` is resolved against `endpoint`, which handles both shapes: stash returns an
+ * absolute URL in practice (`http://127.0.0.1:9999/downloads/<id>/<name>`), in which case
+ * `endpoint` is ignored, and a server-relative path still works. Note the consequence —
+ * with an absolute link the server, not this code, chooses which host receives the
+ * `ApiKey` header. That is accepted: a host that can hand out a link already holds the
+ * key, having received it on the request that produced the link.
  *
  * The name is the link's basename, or `fallbackName` when that is empty or would escape
  * the directory. An existing file is never overwritten, and a transfer that fails partway

@@ -3,25 +3,9 @@
 // documents. Named operations are deliberately unsupported: every document here is a
 // single anonymous operation, so `operationName` is never needed.
 import { OperationalError } from './errors.js';
-import { authFailureMessage, authHeaders, resolveApiKey } from './auth.js';
+import { authFailureMessage, authHeaders, redactApiKey } from './auth.js';
 
 const ACCEPT = 'application/graphql-response+json, application/json';
-
-/**
- * Removes the API key from a response body before it can be interpolated into a message.
- *
- * Every request here goes out carrying the `ApiKey` header, and the messages below quote the
- * body back to the user because that is how you see a server's actual complaint — an HTML
- * login page, or a GraphQL error returned as a 500. A server that echoed request state into
- * that body would otherwise put the key on the screen and into any log capturing stderr.
- *
- * Redacting where the body is read, rather than at each message, is deliberate: no
- * unredacted body is ever in scope, so a message added later cannot reintroduce the leak.
- */
-function redactApiKey(body: string): string {
-  const key = resolveApiKey();
-  return key === undefined ? body : body.replaceAll(key, '[redacted]');
-}
 
 /**
  * Identity template tag. Does no parsing — it exists so documents keep GraphQL
