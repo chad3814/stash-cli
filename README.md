@@ -54,12 +54,27 @@ If the server requires authentication, set `STASH_API_KEY` to the key from stash
 **Settings > Security > Authentication**. It's optional — omitting it sends no `ApiKey`
 header at all, which is how an unauthenticated stash expects to be talked to. There is no
 `--api-key` flag: the key is read from the environment only, so it need not land in shell
-history or shows up in `ps` output for every other user on the machine. Pull it from a
-secret manager instead of typing it directly:
+history or show up in `ps` output for every other user on the machine.
+
+The best way to supply it is `op run`, which resolves a reference and injects the secret
+into the child process. What lives in your shell, your history, and your files is then the
+**reference** — never the key:
 
 ```sh
-STASH_API_KEY=$(op read 'op://Personal/stash/api key') stash sig
+# a reference in an env file; the file itself holds no secret
+op run --env-file=./.env.local -- stash
+
+# or inline, using the item's id so a rename cannot break it
+STASH_API_KEY="op://Private/4vyslzllenzt2dxltm5lxnx3ri/credential" op run -- stash
 ```
+
+Leave 1Password's masking on — it replaces a leaked secret in the child's output, which is
+a second net behind this CLI's own redaction. `stash` already strips the key from anything
+it prints, and refuses a key containing a line break rather than letting the HTTP layer
+quote it back at you, but two independent nets are better than one.
+
+A `$(op read …)` subshell also works and is fine for a one-off. `op run` is preferred
+because the secret never becomes a variable in the parent shell.
 
 ## Build and install
 
