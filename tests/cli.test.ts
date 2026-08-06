@@ -465,6 +465,31 @@ test('a download carries the ApiKey header', async () => {
   }
 });
 
+test('the api key never reaches stdout or stderr, on any path', async () => {
+  const SECRET = 'zzz-unmistakable-key-value-9f3a-zzz';
+  // Each case is a different way the CLI can fail while holding the key. A server that
+  // echoes the key back is included deliberately: the CLI interpolates response bodies
+  // into its error messages, so this is the most plausible route to a disclosure.
+  const cases: { name: string; handler: () => StubReply }[] = [
+    { name: '401', handler: () => ({ status: 401, raw: 'Unauthorized' }) },
+    { name: '500 with the key echoed back', handler: () => ({ status: 500, raw: `rejected key ${SECRET}` }) },
+    { name: 'non-JSON body', handler: () => ({ raw: '<html>login</html>' }) },
+    { name: 'graphql errors array', handler: () => ({ raw: JSON.stringify({ errors: [{ message: 'nope' }] }) }) },
+  ];
+
+  for (const { name, handler } of cases) {
+    const stub = await startStub(handler);
+    try {
+      const result = await runCli([], { STASH_ENDPOINT: stub.url, STASH_API_KEY: SECRET });
+      assert.equal(result.code, 1, `${name}: expected a failure`);
+      assert.doesNotMatch(result.stdout, new RegExp(SECRET), `${name}: the key leaked to stdout`);
+      assert.doesNotMatch(result.stderr, new RegExp(SECRET), `${name}: the key leaked to stderr`);
+    } finally {
+      await stub.close();
+    }
+  }
+});
+
 test('a download rejected for auth explains it and writes nothing', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'stash-download-'));
   const server = createServer((req, res) => {

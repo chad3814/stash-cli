@@ -50,6 +50,17 @@ STASH_ENDPOINT=http://media.local:9999/graphql stash
 stash --endpoint http://media.local:9999/graphql
 ```
 
+If the server requires authentication, set `STASH_API_KEY` to the key from stash's
+**Settings > Security > Authentication**. It's optional — omitting it sends no `ApiKey`
+header at all, which is how an unauthenticated stash expects to be talked to. There is no
+`--api-key` flag: the key is read from the environment only, so it never lands in shell
+history or shows up in `ps` output for every other user on the machine. Pull it from a
+secret manager instead of typing it directly:
+
+```sh
+STASH_API_KEY=$(op read 'op://Personal/stash/api key') stash sig
+```
+
 ## Build and install
 
 ```sh

@@ -158,6 +158,30 @@ test('request throws on a non-2xx status and includes it', async () => {
   }
 });
 
+test('a response body echoing the api key has it redacted, keeping the rest', async () => {
+  // The body is quoted back to the user because that is how a server's actual complaint
+  // becomes visible. This test is what makes that safe: the surrounding text survives and
+  // only the key is replaced. Redaction happens where the body is read, so every message
+  // that interpolates it — including any added later — inherits the guarantee.
+  const SECRET = 'zzz-echoed-key-9f3a-zzz';
+  const restore = process.env['STASH_API_KEY'];
+  process.env['STASH_API_KEY'] = SECRET;
+  const stub = await startStub({ status: 500, body: `rejected ApiKey ${SECRET} for realm x` });
+  try {
+    await assert.rejects(request(stub.url, 'query { ok }'), (err: Error) => {
+      assert.doesNotMatch(err.message, new RegExp(SECRET), 'the key must not survive into the message');
+      assert.match(err.message, /\[redacted\]/);
+      // The diagnostic value of the body is the reason it is quoted at all.
+      assert.match(err.message, /rejected ApiKey .* for realm x/);
+      assert.match(err.message, /500/);
+      return true;
+    });
+  } finally {
+    await stub.close();
+    if (restore === undefined) { delete process.env['STASH_API_KEY']; } else { process.env['STASH_API_KEY'] = restore; }
+  }
+});
+
 test('request throws when the response has no data field', async () => {
   const stub = await startStub({ body: JSON.stringify({ extensions: {} }) });
   try {

@@ -3,9 +3,25 @@
 // documents. Named operations are deliberately unsupported: every document here is a
 // single anonymous operation, so `operationName` is never needed.
 import { OperationalError } from './errors.js';
-import { authFailureMessage, authHeaders } from './auth.js';
+import { authFailureMessage, authHeaders, resolveApiKey } from './auth.js';
 
 const ACCEPT = 'application/graphql-response+json, application/json';
+
+/**
+ * Removes the API key from a response body before it can be interpolated into a message.
+ *
+ * Every request here goes out carrying the `ApiKey` header, and the messages below quote the
+ * body back to the user because that is how you see a server's actual complaint — an HTML
+ * login page, or a GraphQL error returned as a 500. A server that echoed request state into
+ * that body would otherwise put the key on the screen and into any log capturing stderr.
+ *
+ * Redacting where the body is read, rather than at each message, is deliberate: no
+ * unredacted body is ever in scope, so a message added later cannot reintroduce the leak.
+ */
+function redactApiKey(body: string): string {
+  const key = resolveApiKey();
+  return key === undefined ? body : body.replaceAll(key, '[redacted]');
+}
 
 /**
  * Identity template tag. Does no parsing — it exists so documents keep GraphQL
@@ -60,12 +76,12 @@ export async function request<T>(
     body: JSON.stringify(variables === undefined ? { query } : { query, variables }),
   });
 
-  const text = await response.text();
+  const text = redactApiKey(await response.text());
 
   if (!response.ok) {
     // Checked before the generic message because "failed with status 401" tells the user
-    // nothing they can act on. The body is deliberately not interpolated here: a 401 body
-    // is typically an HTML login page.
+    // nothing they can act on. This one deliberately omits the body: a 401 body is
+    // typically an HTML login page, and the remedy is in the message already.
     const authFailure = authFailureMessage(response.status, endpoint);
     if (authFailure !== undefined) {
       throw new OperationalError(authFailure);
